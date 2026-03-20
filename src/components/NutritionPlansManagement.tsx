@@ -5,7 +5,7 @@ import {
   Users, Activity, ChevronDown, ChevronRight, X, Check, AlertTriangle,
   Clock, Flame, Award, Star, Filter, Sun, Moon, Apple, Leaf,
   Droplets, Wheat, BarChart3, Sparkles, Dumbbell, MoreVertical, Zap,
-  Database, Scale, ArrowUpDown, Pencil, Save, Calculator, MinusCircle
+  Database, Scale, ArrowUpDown, Pencil, Save, Calculator, MinusCircle, Maximize2, Minimize2
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { GlassCard } from '@/src/components/DashboardElements';
@@ -1635,6 +1635,7 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
   const [calcItems, setCalcItems] = useState<{ name: string; qty: number }[]>([]);
   const [calcSearch, setCalcSearch] = useState('');
   const [showCalcSuggestions, setShowCalcSuggestions] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const allDB = { ...NUTRITION_DB, ...customIngredients };
   const categories = ['All', ...Array.from(new Set(Object.values(allDB).map(v => v.category)))];
@@ -1679,7 +1680,7 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
       <motion.div
         initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
         transition={{ type: 'spring', damping: 28, stiffness: 240 }}
-        className="relative z-10 bg-[#0f1729] w-full max-w-3xl h-full flex flex-col border-l border-white/10 shadow-2xl"
+        className={cn("relative z-10 bg-[#0f1729] w-full h-full flex flex-col border-l border-white/10 shadow-2xl", isFullscreen ? 'max-w-full' : 'max-w-3xl')}
       >
         {/* Header */}
         <div className="relative bg-gradient-to-r from-gym-accent via-emerald-600 to-teal-500 px-6 pt-5 pb-6 shrink-0">
@@ -1693,9 +1694,14 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
               <h3 className="text-2xl font-extrabold text-white">Ingredient Master</h3>
               <p className="text-white/60 text-xs mt-1">{totalItems} ingredients · {totalCustom} custom</p>
             </div>
-            <button onClick={onClose} className="text-white/60 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-1.5 transition-all">
-              <X size={16} />
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setIsFullscreen(f => !f)} className="text-white/60 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-1.5 transition-all" title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
+                {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+              </button>
+              <button onClick={onClose} className="text-white/60 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-1.5 transition-all">
+                <X size={16} />
+              </button>
+            </div>
           </div>
         </div>
 
