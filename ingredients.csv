@@ -1,0 +1,73 @@
+Ingredient Name,Unit,Calories (kcal),Protein (g),Carbs (g),Fat (g),Sodium (mg),Potassium (mg),Fiber (g),Sugar (g),Calcium (mg),Iron (mg),Category
+Chicken Breast,100g,165,31,0,3.6,74,256,0,0,15,1,Proteins
+Eggs,1 pc,78,6,0.6,5,62,63,0,0.6,25,0.9,Proteins
+Egg Whites,1 pc,17,3.6,0.2,0,55,54,0,0.2,2,0,Proteins
+Salmon,100g,208,20,0,13,59,363,0,0,12,0.8,Proteins
+Cod Fish,100g,82,18,0,0.7,54,413,0,0,16,0.4,Proteins
+Beef Steak,100g,271,26,0,18,66,315,0,0,18,2.6,Proteins
+Whey Protein,1 scoop,120,24,3,1.5,130,160,0,2,120,0.5,Proteins
+Casein Protein,1 scoop,120,24,3,1,160,130,0,1,460,0.4,Proteins
+Greek Yogurt,100g,97,9,3.6,5,35,141,0,3.2,100,0.1,Proteins
+Cottage Cheese,100g,98,11,3.4,4.3,364,104,0,2.7,83,0.1,Proteins
+Paneer,100g,265,18,1.2,21,18,100,0,1.2,480,0.2,Proteins
+Tofu,100g,76,8,1.9,4.8,7,121,0.3,0.6,350,5.4,Proteins
+Tuna,100g,132,29,0,1,47,323,0,0,10,1.3,Proteins
+Oats,100g,389,17,66,7,2,429,11,1,54,4.7,Grains & Carbs
+Brown Rice,100g,123,2.7,26,1,1,79,1.8,0.4,10,0.5,Grains & Carbs
+Rice,100g,130,2.7,28,0.3,1,35,0.4,0,10,1.2,Grains & Carbs
+Quinoa,100g,120,4.4,21,1.9,7,172,2.8,0.9,17,1.5,Grains & Carbs
+Whole Wheat Bread,1 slice,81,4,14,1,146,81,2,1.4,40,1,Grains & Carbs
+Whole Wheat Pasta,100g,124,5,25,0.5,3,44,3.9,0.6,15,1.4,Grains & Carbs
+Sweet Potato,100g,86,1.6,20,0.1,36,337,3,4.2,30,0.6,Grains & Carbs
+Bread,1 slice,75,2.6,13,1,132,37,0.6,1.5,36,0.8,Grains & Carbs
+Cornflakes,30g,114,2,26,0.3,200,26,0.3,3,1,4.3,Grains & Carbs
+Muesli,50g,183,4.5,33,3.5,10,175,4,11,30,2,Grains & Carbs
+Banana,1 pc,105,1.3,27,0.4,1,422,3.1,14,6,0.3,Fruits
+Apple,1 pc,95,0.5,25,0.3,2,195,4.4,19,11,0.2,Fruits
+Blueberries,100g,57,0.7,14,0.3,1,77,2.4,10,6,0.3,Fruits
+Pomegranate,1 pc,83,1.7,19,1.2,3,236,4,14,10,0.3,Fruits
+Dates,1 pc,20,0.2,5.3,0,0,47,0.6,4.5,3,0.1,Fruits
+Amla,1 pc,8,0.1,1.8,0,0,30,0.7,0.6,4,0.1,Fruits
+Lemon,1 pc,17,0.6,5.4,0.2,1,80,1.6,1.5,15,0.4,Fruits
+Orange,1 pc,62,1.2,15,0.2,0,237,3.1,12,52,0.1,Fruits
+Watermelon,100g,30,0.6,7.6,0.2,1,112,0.4,6.2,7,0.2,Fruits
+Papaya,100g,43,0.5,11,0.3,8,182,1.7,7.8,20,0.3,Fruits
+Mango,1 pc,202,2.8,50,1.3,3,564,5.4,46,22,0.3,Fruits
+Spinach,100g,23,2.9,3.6,0.4,79,558,2.2,0.4,99,2.7,Vegetables
+Kale,100g,49,4.3,9,0.9,38,491,3.6,2.3,150,1.5,Vegetables
+Broccoli,100g,34,2.8,7,0.4,33,316,2.6,1.7,47,0.7,Vegetables
+Asparagus,100g,20,2.2,3.9,0.1,2,202,2.1,1.9,24,2.1,Vegetables
+Cucumber,100g,15,0.7,3.6,0.1,2,147,0.5,1.7,16,0.3,Vegetables
+Bell Peppers,1 pc,31,1,6,0.3,4,251,2.1,4.2,7,0.5,Vegetables
+Zucchini,100g,17,1.2,3.1,0.3,8,261,1,2.5,16,0.4,Vegetables
+Tomato,1 pc,22,1.1,4.8,0.2,6,292,1.5,3.2,12,0.3,Vegetables
+Lettuce,100g,15,1.4,2.9,0.2,28,194,1.3,0.8,36,0.9,Vegetables
+Carrot,1 pc,25,0.6,6,0.1,42,195,1.7,2.9,20,0.2,Vegetables
+Beetroot,100g,43,1.6,10,0.2,78,325,2.8,6.8,16,0.8,Vegetables
+Mixed Veggies,100g,65,3,13,0.3,45,250,3,4,30,0.8,Vegetables
+Avocado,1 pc,240,3,12,22,11,728,10,1,18,0.8,Vegetables
+Almonds,10 pcs,70,2.6,2.4,6,0,80,1.2,0.5,30,0.4,Nuts & Seeds
+Cashews,10 pcs,55,1.8,3,4.4,3,63,0.3,0.6,4,0.6,Nuts & Seeds
+Walnuts,10 pcs,131,3,2.7,13,0,88,1.3,0.5,20,0.6,Nuts & Seeds
+Peanut Butter,1 tbsp,94,4,3,8,73,107,0.8,1.7,7,0.3,Nuts & Seeds
+Chia Seeds,1 tbsp,58,2,5,3.7,2,50,4.1,0,76,0.9,Nuts & Seeds
+Flax Seeds,1 tbsp,37,1.3,2,3,2,57,1.9,0.1,18,0.4,Nuts & Seeds
+Pumpkin Seeds,1 tbsp,47,2,1.5,4,2,57,0.4,0.1,4,1,Nuts & Seeds
+Trail Mix,30g,137,4,13,9,65,150,1.5,9,20,0.8,Nuts & Seeds
+Milk,200ml,100,6.4,9.6,4,86,300,0,9.6,240,0,Dairy & Drinks
+Whole Milk,200ml,122,6.4,9.4,6.4,86,300,0,9.4,240,0,Dairy & Drinks
+Almond Milk,200ml,30,1,1.4,2.5,130,60,0.4,0,300,0.4,Dairy & Drinks
+Coconut Water,200ml,38,0.4,8.8,0.2,50,470,0,8,34,0.1,Dairy & Drinks
+Green Tea,1 cup,2,0,0,0,2,20,0,0,0,0,Dairy & Drinks
+Chamomile Tea,1 cup,2,0,0,0,2,21,0,0,5,0.2,Dairy & Drinks
+Yogurt,100g,59,3.5,5,3.3,46,155,0,5,121,0.1,Dairy & Drinks
+Honey,1 tbsp,64,0,17,0,1,11,0,17,1,0.1,Dairy & Drinks
+Turmeric,1 tsp,9,0.3,2,0.1,1,56,0.5,0.1,5,1.6,Dairy & Drinks
+Cinnamon,1 tsp,6,0.1,2,0,0,11,1.4,0.1,26,0.2,Spices & Extras
+Ginger,1 tsp,2,0,0.4,0,1,8,0,0,0,0,Spices & Extras
+Mint,5 leaves,1,0,0.1,0,1,18,0.3,0,7,0.2,Spices & Extras
+Olive Oil,1 tbsp,119,0,0,14,0,0,0,0,0,0.1,Spices & Extras
+Cacao Powder,1 tbsp,12,1,3,0.7,1,82,2,0,7,0.8,Spices & Extras
+Vanilla Extract,1 tsp,12,0,0.5,0,1,6,0,0.5,0,0,Spices & Extras
+Black Pepper,1 tsp,6,0.2,1.5,0.1,0,31,0.6,0,10,0.2,Spices & Extras
+Cumin,1 tsp,8,0.4,0.9,0.5,4,38,0.2,0.1,20,1.4,Spices & Extras

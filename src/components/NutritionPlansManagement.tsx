@@ -1060,7 +1060,7 @@ const CreatePlanModal = ({ initial, onClose, onSave }: {
     };
     setMeals(p => ({
       ...p,
-      [session]: [...p[session], { name: '', ...defaults[session], cal: 0, protein: 0, carbs: 0, fats: 0 }],
+      [session]: [...p[session], { name: '', ...defaults[session], cal: 0, protein: 0, carbs: 0, fats: 0, items: [] }],
     }));
   };
 
@@ -1627,15 +1627,65 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingItem, setEditingItem] = useState<string | null>(null);
   const [newIng, setNewIng] = useState<Record<string, any>>({ name: '', unit: '1', cal: 0, protein: 0, carbs: 0, fats: 0, sodium: 0, potassium: 0, fiber: 0, sugar: 0, calcium: 0, iron: 0, category: 'Proteins' });
-  const [showNutrientManager, setShowNutrientManager] = useState(false);
-  const [newNutrient, setNewNutrient] = useState({ name: '', unit: 'mg', color: NUTRIENT_COLORS[0] });
   const [editingNutrient, setEditingNutrient] = useState<string | null>(null);
   const [showNameSuggestions, setShowNameSuggestions] = useState(false);
   const [showCalc, setShowCalc] = useState(false);
   const [calcItems, setCalcItems] = useState<{ name: string; qty: number }[]>([]);
   const [calcSearch, setCalcSearch] = useState('');
   const [showCalcSuggestions, setShowCalcSuggestions] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(true);
+  const [showDietBuilder, setShowDietBuilder] = useState(false);
+  const [dietItems, setDietItems] = useState<{ name: string; qty: number; session: 'morning' | 'afternoon' | 'evening' }[]>([]);
+  const [dietName, setDietName] = useState('');
+  const [dietSearch, setDietSearch] = useState('');
+  const [showDietSuggestions, setShowDietSuggestions] = useState(false);
+  const [dietSession, setDietSession] = useState<'morning' | 'afternoon' | 'evening'>('morning');
+  const [savedDiets, setSavedDiets] = useState<{ name: string; items: { name: string; qty: number; session: 'morning' | 'afternoon' | 'evening' }[] }[]>([]);
+  const [editingDietIdx, setEditingDietIdx] = useState<number | null>(null);
+  const [showDishBuilder, setShowDishBuilder] = useState(false);
+  const [dishName, setDishName] = useState('');
+  const [dishCategory, setDishCategory] = useState('Breakfast');
+  const [dishGoal, setDishGoal] = useState('Maintenance');
+  const [dishItems, setDishItems] = useState<{ name: string; qty: number }[]>([]);
+  const [dishSearch, setDishSearch] = useState('');
+  const [showDishSuggestions, setShowDishSuggestions] = useState(false);
+  const [dishFilterCat, setDishFilterCat] = useState<string>('All');
+  const [dishFilterGoal, setDishFilterGoal] = useState<string>('All');
+
+  type SavedDish = { name: string; category: string; goal: string; items: { name: string; qty: number }[] };
+  const MEAL_CATEGORIES = ['Breakfast', 'Lunch', 'Dinner', 'Pre-Workout', 'Post-Workout', 'Snack'];
+  const GOAL_TYPES = ['Weight Loss', 'Muscle Gain', 'Maintenance'];
+
+  // Pre-built professional fitness recipes
+  const DEFAULT_DISHES: SavedDish[] = [
+    { name: 'Protein Oatmeal Bowl', category: 'Breakfast', goal: 'Muscle Gain', items: [{ name: 'Oats', qty: 1 }, { name: 'Whey Protein', qty: 1 }, { name: 'Banana', qty: 1 }, { name: 'Almonds', qty: 1 }, { name: 'Honey', qty: 1 }] },
+    { name: 'Egg White Omelette', category: 'Breakfast', goal: 'Weight Loss', items: [{ name: 'Egg Whites', qty: 4 }, { name: 'Spinach', qty: 0.5 }, { name: 'Bell Peppers', qty: 0.5 }, { name: 'Tomato', qty: 0.5 }] },
+    { name: 'Greek Yogurt Parfait', category: 'Breakfast', goal: 'Maintenance', items: [{ name: 'Greek Yogurt', qty: 2 }, { name: 'Blueberries', qty: 1 }, { name: 'Honey', qty: 0.5 }, { name: 'Chia Seeds', qty: 1 }, { name: 'Almonds', qty: 0.5 }] },
+    { name: 'Power Smoothie', category: 'Breakfast', goal: 'Muscle Gain', items: [{ name: 'Banana', qty: 1 }, { name: 'Whey Protein', qty: 1 }, { name: 'Milk', qty: 1 }, { name: 'Peanut Butter', qty: 1 }, { name: 'Oats', qty: 0.5 }] },
+    { name: 'Grilled Chicken Salad', category: 'Lunch', goal: 'Weight Loss', items: [{ name: 'Chicken Breast', qty: 1.5 }, { name: 'Lettuce', qty: 1 }, { name: 'Cucumber', qty: 1 }, { name: 'Tomato', qty: 1 }, { name: 'Olive Oil', qty: 1 }, { name: 'Lemon', qty: 0.5 }] },
+    { name: 'Chicken Rice Bowl', category: 'Lunch', goal: 'Muscle Gain', items: [{ name: 'Chicken Breast', qty: 2 }, { name: 'Brown Rice', qty: 1.5 }, { name: 'Broccoli', qty: 1 }, { name: 'Olive Oil', qty: 1 }] },
+    { name: 'Quinoa Veggie Bowl', category: 'Lunch', goal: 'Maintenance', items: [{ name: 'Quinoa', qty: 1.5 }, { name: 'Spinach', qty: 1 }, { name: 'Avocado', qty: 0.5 }, { name: 'Bell Peppers', qty: 1 }, { name: 'Olive Oil', qty: 1 }, { name: 'Lemon', qty: 0.5 }] },
+    { name: 'Tuna Wrap', category: 'Lunch', goal: 'Weight Loss', items: [{ name: 'Tuna', qty: 1 }, { name: 'Whole Wheat Bread', qty: 2 }, { name: 'Lettuce', qty: 0.5 }, { name: 'Tomato', qty: 0.5 }, { name: 'Cucumber', qty: 0.5 }] },
+    { name: 'Salmon & Sweet Potato', category: 'Dinner', goal: 'Muscle Gain', items: [{ name: 'Salmon', qty: 1.5 }, { name: 'Sweet Potato', qty: 2 }, { name: 'Asparagus', qty: 1 }, { name: 'Olive Oil', qty: 1 }, { name: 'Lemon', qty: 0.5 }] },
+    { name: 'Grilled Fish & Veggies', category: 'Dinner', goal: 'Weight Loss', items: [{ name: 'Cod Fish', qty: 1.5 }, { name: 'Broccoli', qty: 1 }, { name: 'Zucchini', qty: 1 }, { name: 'Olive Oil', qty: 0.5 }, { name: 'Lemon', qty: 0.5 }] },
+    { name: 'Steak & Brown Rice', category: 'Dinner', goal: 'Muscle Gain', items: [{ name: 'Beef Steak', qty: 2 }, { name: 'Brown Rice', qty: 1.5 }, { name: 'Mixed Veggies', qty: 1 }, { name: 'Olive Oil', qty: 1 }] },
+    { name: 'Paneer Tikka Bowl', category: 'Dinner', goal: 'Maintenance', items: [{ name: 'Paneer', qty: 1.5 }, { name: 'Rice', qty: 1 }, { name: 'Bell Peppers', qty: 1 }, { name: 'Tomato', qty: 1 }, { name: 'Olive Oil', qty: 1 }] },
+    { name: 'Pre-Workout Energy Shake', category: 'Pre-Workout', goal: 'Muscle Gain', items: [{ name: 'Banana', qty: 1 }, { name: 'Oats', qty: 0.5 }, { name: 'Honey', qty: 1 }, { name: 'Milk', qty: 1 }, { name: 'Dates', qty: 2 }] },
+    { name: 'Pre-Workout Snack Plate', category: 'Pre-Workout', goal: 'Maintenance', items: [{ name: 'Apple', qty: 1 }, { name: 'Peanut Butter', qty: 1 }, { name: 'Dates', qty: 3 }] },
+    { name: 'Post-Workout Recovery Shake', category: 'Post-Workout', goal: 'Muscle Gain', items: [{ name: 'Whey Protein', qty: 1 }, { name: 'Banana', qty: 1 }, { name: 'Milk', qty: 1 }, { name: 'Peanut Butter', qty: 1 }] },
+    { name: 'Post-Workout Casein Bowl', category: 'Post-Workout', goal: 'Muscle Gain', items: [{ name: 'Casein Protein', qty: 1 }, { name: 'Greek Yogurt', qty: 1 }, { name: 'Blueberries', qty: 0.5 }, { name: 'Almonds', qty: 1 }] },
+    { name: 'Detox Green Smoothie', category: 'Snack', goal: 'Weight Loss', items: [{ name: 'Spinach', qty: 1 }, { name: 'Cucumber', qty: 1 }, { name: 'Apple', qty: 1 }, { name: 'Lemon', qty: 1 }, { name: 'Ginger', qty: 1 }, { name: 'Green Tea', qty: 1 }] },
+    { name: 'Trail Mix Energy Bites', category: 'Snack', goal: 'Maintenance', items: [{ name: 'Trail Mix', qty: 1 }, { name: 'Dates', qty: 2 }, { name: 'Peanut Butter', qty: 1 }, { name: 'Honey', qty: 0.5 }] },
+    { name: 'Cottage Cheese & Fruit', category: 'Snack', goal: 'Weight Loss', items: [{ name: 'Cottage Cheese', qty: 1.5 }, { name: 'Blueberries', qty: 0.5 }, { name: 'Flax Seeds', qty: 1 }] },
+    { name: 'Overnight Oats', category: 'Breakfast', goal: 'Maintenance', items: [{ name: 'Oats', qty: 0.5 }, { name: 'Milk', qty: 0.5 }, { name: 'Chia Seeds', qty: 1 }, { name: 'Honey', qty: 0.5 }, { name: 'Banana', qty: 0.5 }, { name: 'Almonds', qty: 0.5 }] },
+    { name: 'Tofu Stir Fry', category: 'Lunch', goal: 'Weight Loss', items: [{ name: 'Tofu', qty: 2 }, { name: 'Broccoli', qty: 1 }, { name: 'Bell Peppers', qty: 1 }, { name: 'Zucchini', qty: 0.5 }, { name: 'Olive Oil', qty: 1 }, { name: 'Ginger', qty: 1 }] },
+  ];
+
+  const [savedDishes, setSavedDishes] = useState<SavedDish[]>(DEFAULT_DISHES);
+  const [editingDishIdx, setEditingDishIdx] = useState<number | null>(null);
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [showNutrientPopup, setShowNutrientPopup] = useState(false);
+  const [popupNutrient, setPopupNutrient] = useState({ name: '', unit: 'mg', color: NUTRIENT_COLORS[0], maxValue: 1000, step: 5 });
 
   const allDB = { ...NUTRITION_DB, ...customIngredients };
   const categories = ['All', ...Array.from(new Set(Object.values(allDB).map(v => v.category)))];
@@ -1714,15 +1764,25 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
                 placeholder="Search ingredients..."
                 className="w-full bg-white/5 border border-white/10 rounded-xl pl-9 pr-4 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-gym-accent/50" />
             </div>
-            <button onClick={() => { setShowCalc(p => !p); if (!showCalc) setShowNutrientManager(false); }}
+            <button onClick={() => { setShowCalc(p => !p); }}
               className={cn("flex items-center gap-2 px-4 py-2 border rounded-xl font-bold text-xs transition-all",
                 showCalc ? 'bg-gym-amber/10 border-gym-amber/30 text-gym-amber' : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10')}>
               <Calculator size={14} /> Nutrition Calc {calcItems.length > 0 && <span className="px-1.5 py-0.5 rounded-full bg-gym-amber/20 text-gym-amber text-[8px] font-bold">{calcItems.length}</span>}
             </button>
-            <button onClick={() => { setShowNutrientManager(p => !p); if (!showNutrientManager) setShowCalc(false); }}
+            <button onClick={() => { setShowNutrientPopup(true); setPopupNutrient({ name: '', unit: 'mg', color: NUTRIENT_COLORS[(customNutrientTypes.length) % NUTRIENT_COLORS.length], maxValue: 1000, step: 5 }); setEditingNutrient(null); }}
               className={cn("flex items-center gap-2 px-4 py-2 border rounded-xl font-bold text-xs transition-all",
-                showNutrientManager ? 'bg-gym-secondary/10 border-gym-secondary/30 text-gym-secondary' : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10')}>
+                'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10')}>
               <Zap size={14} /> Nutrient Types {customNutrientTypes.length > 0 && <span className="px-1.5 py-0.5 rounded-full bg-gym-secondary/20 text-gym-secondary text-[8px] font-bold">{customNutrientTypes.length}</span>}
+            </button>
+            <button onClick={() => { setShowDishBuilder(true); setDishName(''); setDishCategory('Breakfast'); setDishGoal('Maintenance'); setDishItems([]); setDishSearch(''); setEditingDishIdx(null); }}
+              className={cn("flex items-center gap-2 px-4 py-2 border rounded-xl font-bold text-xs transition-all",
+                'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10')}>
+              <Sparkles size={14} /> Meal Prep {savedDishes.length > 0 && <span className="px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-400 text-[8px] font-bold">{savedDishes.length}</span>}
+            </button>
+            <button onClick={() => { setShowDietBuilder(d => !d); }}
+              className={cn("flex items-center gap-2 px-4 py-2 border rounded-xl font-bold text-xs transition-all",
+                showDietBuilder ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10')}>
+              <Leaf size={14} /> Diet Builder {savedDiets.length > 0 && <span className="px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[8px] font-bold">{savedDiets.length}</span>}
             </button>
             <button onClick={() => { setShowAddForm(true); setEditingItem(null); const extras: Record<string, number> = {}; customNutrientTypes.forEach(n => { extras[n.id] = 0; }); setNewIng({ name: '', unit: '1', cal: 0, protein: 0, carbs: 0, fats: 0, sodium: 0, potassium: 0, fiber: 0, sugar: 0, calcium: 0, iron: 0, category: 'Proteins', ...extras }); }}
               className="flex items-center gap-2 px-4 py-2 bg-gym-accent text-white rounded-xl font-bold text-xs hover:bg-gym-accent/80 transition-all shadow-lg shadow-gym-accent/20">
@@ -1982,93 +2042,334 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
           )}
         </AnimatePresence>
 
-        {/* Nutrient Types Manager */}
+        {/* Diet Builder */}
         <AnimatePresence>
-          {showNutrientManager && (
+          {showDietBuilder && (
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
               className="overflow-hidden border-b border-white/5 shrink-0">
               <div className="px-5 py-4">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <Zap size={14} className="text-gym-secondary" />
-                    <h4 className="text-sm font-bold text-white">Custom Nutrient Types</h4>
-                    <span className="text-[8px] text-slate-500">Add nutrients like Vitamin A, Vitamin B12, Magnesium, etc.</span>
+                    <Leaf size={14} className="text-emerald-400" />
+                    <h4 className="text-sm font-bold text-white">Diet Builder</h4>
+                    <span className="text-[8px] text-slate-500">Create diets with ingredients by meal session</span>
                   </div>
-                </div>
-                {/* Add new nutrient type form */}
-                <div className="flex gap-2 mb-3">
-                  <input type="text" value={newNutrient.name}
-                    onChange={e => setNewNutrient(p => ({ ...p, name: e.target.value }))}
-                    placeholder="Nutrient name (e.g. Vitamin A)"
-                    className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-gym-secondary/50" />
-                  <input type="text" value={newNutrient.unit}
-                    onChange={e => setNewNutrient(p => ({ ...p, unit: e.target.value }))}
-                    placeholder="Unit (mg, μg, IU)"
-                    className="w-20 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-gym-secondary/50" />
-                  <select value={newNutrient.color} onChange={e => setNewNutrient(p => ({ ...p, color: e.target.value }))}
-                    className="w-28 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-gym-secondary/50">
-                    {NUTRIENT_COLORS.map(c => (
-                      <option key={c} value={c} className="bg-[#1e293b]">{c.replace('text-', '').replace('-400', '').replace('-300', '')}</option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={() => {
-                      if (!newNutrient.name.trim()) return;
-                      const id = newNutrient.name.trim().toLowerCase().replace(/\s+/g, '_');
-                      if (editingNutrient) {
-                        onUpdateNutrientType(editingNutrient, { id, name: newNutrient.name.trim(), unit: newNutrient.unit, color: newNutrient.color });
-                        setEditingNutrient(null);
-                      } else {
-                        onAddNutrientType({ id, name: newNutrient.name.trim(), unit: newNutrient.unit, color: newNutrient.color });
-                      }
-                      setNewNutrient({ name: '', unit: 'mg', color: NUTRIENT_COLORS[(customNutrientTypes.length + 1) % NUTRIENT_COLORS.length] });
-                    }}
-                    disabled={!newNutrient.name.trim()}
-                    className="px-4 py-1.5 bg-gym-secondary text-white rounded-lg text-xs font-bold disabled:opacity-40 hover:bg-gym-secondary/80 transition-all flex items-center gap-1">
-                    {editingNutrient ? <><Save size={11} /> Update</> : <><Plus size={11} /> Add</>}
-                  </button>
-                  {editingNutrient && (
-                    <button onClick={() => { setEditingNutrient(null); setNewNutrient({ name: '', unit: 'mg', color: NUTRIENT_COLORS[0] }); }}
-                      className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-xs text-slate-400 hover:bg-white/10 transition-all">Cancel</button>
+                  {dietItems.length > 0 && (
+                    <button onClick={() => { setDietItems([]); setDietName(''); setEditingDietIdx(null); }} className="text-[9px] text-slate-500 hover:text-gym-rose transition-colors">Clear all</button>
                   )}
                 </div>
-                {/* List existing custom nutrient types */}
-                {customNutrientTypes.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {customNutrientTypes.map(nt => (
-                      <div key={nt.id} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/5 group">
-                        <span className={cn("w-2 h-2 rounded-full", nt.color.replace('text-', 'bg-'))} />
-                        <span className="text-xs font-semibold text-white">{nt.name}</span>
-                        <span className="text-[8px] text-slate-500">({nt.unit})</span>
-                        <button onClick={() => { setEditingNutrient(nt.id); setNewNutrient({ name: nt.name, unit: nt.unit, color: nt.color }); }}
-                          className="ml-1 p-0.5 rounded text-slate-600 hover:text-gym-secondary opacity-0 group-hover:opacity-100 transition-all" title="Edit">
-                          <Pencil size={9} />
-                        </button>
-                        <button onClick={() => onDeleteNutrientType(nt.id)}
-                          className="p-0.5 rounded text-slate-600 hover:text-gym-rose opacity-0 group-hover:opacity-100 transition-all" title="Delete">
-                          <Trash2 size={9} />
-                        </button>
-                      </div>
+
+                {/* Diet Name */}
+                <input type="text" value={dietName} onChange={e => setDietName(e.target.value)}
+                  placeholder="Diet name (e.g. Muscle Gain Day 1, Client Morning Plan...)"
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white font-semibold placeholder:text-slate-500 focus:outline-none focus:border-emerald-500/50 mb-3" />
+
+                {/* Session selector + Search */}
+                <div className="flex gap-2 mb-3">
+                  <div className="flex items-center bg-white/5 border border-white/10 rounded-lg overflow-hidden shrink-0">
+                    {(['morning', 'afternoon', 'evening'] as const).map(s => (
+                      <button key={s} onClick={() => setDietSession(s)}
+                        className={cn("px-3 py-2 text-[9px] font-bold capitalize transition-all",
+                          dietSession === s
+                            ? s === 'morning' ? 'bg-amber-500/20 text-amber-400' : s === 'afternoon' ? 'bg-sky-500/20 text-sky-400' : 'bg-indigo-500/20 text-indigo-400'
+                            : 'text-slate-500 hover:text-white')}>
+                        {s === 'morning' ? <Sun size={11} className="inline mr-1" /> : s === 'afternoon' ? <Activity size={11} className="inline mr-1" /> : <Moon size={11} className="inline mr-1" />}
+                        {s}
+                      </button>
                     ))}
                   </div>
-                ) : (
-                  <p className="text-[10px] text-slate-600 italic">No custom nutrient types yet. Add one above to track additional nutrients like Vitamin A, B12, Magnesium, etc.</p>
+                  <div className="relative flex-1">
+                    <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input type="text" value={dietSearch}
+                      onChange={e => { setDietSearch(e.target.value); setShowDietSuggestions(true); }}
+                      onFocus={() => setShowDietSuggestions(true)}
+                      onBlur={() => setTimeout(() => setShowDietSuggestions(false), 150)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && dietSearch.trim()) {
+                          const qm = dietSearch.match(/^(\d+\.?\d*)\s+(.+)/);
+                          const qty = qm ? parseFloat(qm[1]) : 1;
+                          const term = (qm ? qm[2] : dietSearch).trim();
+                          const match = Object.keys(allDB).find(n => n.toLowerCase() === term.toLowerCase())
+                            || Object.keys(allDB).find(n => n.toLowerCase().includes(term.toLowerCase()));
+                          if (match) {
+                            setDietItems(prev => [...prev, { name: match, qty, session: dietSession }]);
+                            setDietSearch('');
+                            setShowDietSuggestions(false);
+                          }
+                        }
+                      }}
+                      placeholder="Type ingredient & press Enter..."
+                      className="w-full bg-white/5 border border-white/10 rounded-lg pl-8 pr-4 py-2 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500/50" />
+                    {showDietSuggestions && dietSearch.length >= 1 && (() => {
+                      const qm = dietSearch.match(/^(\d+\.?\d*)\s+(.+)/);
+                      const qty = qm ? parseFloat(qm[1]) : 1;
+                      const term = (qm ? qm[2] : dietSearch).trim().toLowerCase();
+                      const matches = Object.entries(allDB).filter(([n]) => n.toLowerCase().includes(term)).slice(0, 6);
+                      const dishMatches = savedDishes.filter(d => d.name.toLowerCase().includes(term)).slice(0, 4);
+                      if (matches.length === 0 && dishMatches.length === 0) return null;
+                      return (
+                        <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-[#1e293b] border border-white/10 rounded-lg shadow-xl max-h-56 overflow-y-auto">
+                          {/* Dish matches first */}
+                          {dishMatches.length > 0 && (
+                            <>
+                              <div className="px-3 py-1 bg-purple-500/10 text-[8px] font-bold text-purple-400 uppercase tracking-wider">Dishes</div>
+                              {dishMatches.map(dish => {
+                                let dCal = 0, dProt = 0, dCarb = 0, dFat = 0;
+                                dish.items.forEach(item => {
+                                  const info = allDB[item.name];
+                                  if (info) { dCal += Math.round(info.cal * item.qty); dProt += +(info.protein * item.qty).toFixed(1); dCarb += +(info.carbs * item.qty).toFixed(1); dFat += +(info.fats * item.qty).toFixed(1); }
+                                });
+                                return (
+                                  <button key={`dish-${dish.name}`} type="button"
+                                    onMouseDown={e => e.preventDefault()}
+                                    onClick={() => {
+                                      dish.items.forEach(item => {
+                                        setDietItems(prev => [...prev, { name: item.name, qty: item.qty * qty, session: dietSession }]);
+                                      });
+                                      setDietSearch('');
+                                      setShowDietSuggestions(false);
+                                    }}
+                                    className="w-full text-left px-3 py-2 text-xs hover:bg-purple-500/10 transition-colors flex items-center justify-between gap-2 border-b border-white/5 last:border-0">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <Sparkles size={10} className="text-purple-400 shrink-0" />
+                                      <span className="text-purple-300 font-semibold truncate">{qty > 1 ? `${qty} × ` : ''}{dish.name}</span>
+                                      <span className="text-[7px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 shrink-0">{dish.items.length} items</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0 text-[8px]">
+                                      <span className="text-white">{Math.round(dCal * qty)}cal</span>
+                                      <span className="text-gym-accent">{+(dProt * qty).toFixed(1)}p</span>
+                                      <span className="text-gym-amber">{+(dCarb * qty).toFixed(1)}c</span>
+                                      <span className="text-gym-rose">{+(dFat * qty).toFixed(1)}f</span>
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </>
+                          )}
+                          {/* Ingredient matches */}
+                          {matches.length > 0 && dishMatches.length > 0 && (
+                            <div className="px-3 py-1 bg-white/[0.03] text-[8px] font-bold text-slate-500 uppercase tracking-wider">Ingredients</div>
+                          )}
+                          {matches.map(([n, info]) => (
+                            <button key={n} type="button"
+                              onMouseDown={e => e.preventDefault()}
+                              onClick={() => {
+                                setDietItems(prev => [...prev, { name: n, qty, session: dietSession }]);
+                                setDietSearch('');
+                                setShowDietSuggestions(false);
+                              }}
+                              className="w-full text-left px-3 py-2 text-xs hover:bg-white/10 transition-colors flex items-center justify-between gap-2 border-b border-white/5 last:border-0">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="text-white font-semibold truncate">{qty > 1 ? `${qty} × ` : ''}{n}</span>
+                                <span className="text-[7px] px-1.5 py-0.5 rounded bg-white/5 text-slate-400 shrink-0">{info.category}</span>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0 text-[8px]">
+                                <span className="text-white">{Math.round(info.cal * qty)}cal</span>
+                                <span className="text-gym-accent">{+(info.protein * qty).toFixed(1)}p</span>
+                                <span className="text-gym-amber">{+(info.carbs * qty).toFixed(1)}c</span>
+                                <span className="text-gym-rose">{+(info.fats * qty).toFixed(1)}f</span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                {/* Diet Items by Session */}
+                {dietItems.length > 0 ? (() => {
+                  const sessions = ['morning', 'afternoon', 'evening'] as const;
+                  const sessionLabels = { morning: 'Morning', afternoon: 'Afternoon', evening: 'Evening' };
+                  const sessionColors = { morning: 'text-amber-400', afternoon: 'text-sky-400', evening: 'text-indigo-400' };
+                  const sessionBg = { morning: 'bg-amber-500/10', afternoon: 'bg-sky-500/10', evening: 'bg-indigo-500/10' };
+                  const sessionIcons = { morning: <Sun size={11} />, afternoon: <Activity size={11} />, evening: <Moon size={11} /> };
+
+                  // Compute grand totals
+                  let grandCal = 0, grandProtein = 0, grandCarbs = 0, grandFats = 0;
+                  dietItems.forEach(item => {
+                    const info = allDB[item.name];
+                    if (info) {
+                      grandCal += Math.round(info.cal * item.qty);
+                      grandProtein += +(info.protein * item.qty).toFixed(1);
+                      grandCarbs += +(info.carbs * item.qty).toFixed(1);
+                      grandFats += +(info.fats * item.qty).toFixed(1);
+                    }
+                  });
+
+                  return (
+                    <>
+                      {sessions.map(s => {
+                        const sessionItems = dietItems.filter(d => d.session === s);
+                        if (sessionItems.length === 0) return null;
+                        let sCal = 0, sProt = 0, sCarb = 0, sFat = 0;
+                        sessionItems.forEach(item => {
+                          const info = allDB[item.name];
+                          if (info) { sCal += Math.round(info.cal * item.qty); sProt += +(info.protein * item.qty).toFixed(1); sCarb += +(info.carbs * item.qty).toFixed(1); sFat += +(info.fats * item.qty).toFixed(1); }
+                        });
+                        return (
+                          <div key={s} className="mb-3">
+                            <div className="flex items-center gap-2 mb-1.5">
+                              <span className={cn("flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider", sessionColors[s])}>
+                                {sessionIcons[s]} {sessionLabels[s]}
+                              </span>
+                              <span className="text-[8px] text-slate-600">{sessionItems.length} item{sessionItems.length > 1 ? 's' : ''}</span>
+                              <span className="text-[8px] text-slate-500 ml-auto">{sCal}cal · {sProt}p · {sCarb}c · {sFat}f</span>
+                            </div>
+                            <div className="rounded-lg border border-white/5 overflow-hidden">
+                              {sessionItems.map((item, localIdx) => {
+                                const globalIdx = dietItems.indexOf(item);
+                                const info = allDB[item.name];
+                                return (
+                                  <div key={`${item.name}-${globalIdx}`} className={cn("flex items-center gap-2 px-3 py-1.5 group hover:bg-white/5 transition-all",
+                                    localIdx % 2 === 0 ? 'bg-white/[0.02]' : '')}>
+                                    <span className="text-[10px] font-semibold text-white truncate flex-1 min-w-0">{item.name}</span>
+                                    {info && (
+                                      <div className="flex items-center gap-1.5 text-[8px] shrink-0">
+                                        <span className="text-white">{Math.round(info.cal * item.qty)}</span>
+                                        <span className="text-gym-accent">{+(info.protein * item.qty).toFixed(1)}p</span>
+                                        <span className="text-gym-amber">{+(info.carbs * item.qty).toFixed(1)}c</span>
+                                        <span className="text-gym-rose">{+(info.fats * item.qty).toFixed(1)}f</span>
+                                      </div>
+                                    )}
+                                    <div className="flex items-center gap-0.5 shrink-0">
+                                      <button onClick={() => setDietItems(p => p.map((x, i) => i === globalIdx ? { ...x, qty: Math.max(0.5, x.qty - 0.5) } : x))}
+                                        className="w-4 h-4 rounded bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 flex items-center justify-center text-[10px] font-bold transition-all">-</button>
+                                      <input type="number" value={item.qty} min={0.5} step={0.5}
+                                        onChange={e => { const v = parseFloat(e.target.value) || 0.5; setDietItems(p => p.map((x, i) => i === globalIdx ? { ...x, qty: v } : x)); }}
+                                        className="w-10 text-center bg-white/5 border border-white/10 rounded px-0.5 py-0.5 text-[9px] text-emerald-400 font-bold focus:outline-none focus:border-emerald-500/50" />
+                                      <button onClick={() => setDietItems(p => p.map((x, i) => i === globalIdx ? { ...x, qty: x.qty + 0.5 } : x))}
+                                        className="w-4 h-4 rounded bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 flex items-center justify-center text-[10px] font-bold transition-all">+</button>
+                                    </div>
+                                    <button onClick={() => setDietItems(p => p.filter((_, i) => i !== globalIdx))}
+                                      className="p-0.5 text-slate-600 hover:text-gym-rose opacity-0 group-hover:opacity-100 transition-all shrink-0">
+                                      <X size={10} />
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* Grand Totals */}
+                      <div className="rounded-lg bg-white/[0.04] border border-white/10 px-3 py-2 flex items-center gap-4 mb-3">
+                        <span className="text-[9px] font-extrabold text-emerald-400 uppercase tracking-wider">Total</span>
+                        <span className="text-[9px] text-slate-400">{dietItems.length} items</span>
+                        <span className="ml-auto flex items-center gap-3 text-[10px] font-bold">
+                          <span className="text-white">{grandCal} cal</span>
+                          <span className="text-gym-accent">{+grandProtein.toFixed(1)}g P</span>
+                          <span className="text-gym-amber">{+grandCarbs.toFixed(1)}g C</span>
+                          <span className="text-gym-rose">{+grandFats.toFixed(1)}g F</span>
+                        </span>
+                      </div>
+
+                      {/* Macro bar */}
+                      {grandProtein + grandCarbs + grandFats > 0 && (
+                        <div className="mb-3">
+                          <div className="flex items-center gap-1 h-2 rounded-full overflow-hidden bg-white/5">
+                            <div className="h-full bg-gym-accent rounded-full transition-all" style={{ width: `${(grandProtein / (grandProtein + grandCarbs + grandFats)) * 100}%` }} />
+                            <div className="h-full bg-gym-amber rounded-full transition-all" style={{ width: `${(grandCarbs / (grandProtein + grandCarbs + grandFats)) * 100}%` }} />
+                            <div className="h-full bg-gym-rose rounded-full transition-all" style={{ width: `${(grandFats / (grandProtein + grandCarbs + grandFats)) * 100}%` }} />
+                          </div>
+                          <div className="flex items-center gap-4 mt-1 text-[8px] text-slate-400">
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gym-accent" />Protein {Math.round((grandProtein / (grandProtein + grandCarbs + grandFats)) * 100)}%</span>
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gym-amber" />Carbs {Math.round((grandCarbs / (grandProtein + grandCarbs + grandFats)) * 100)}%</span>
+                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gym-rose" />Fat {Math.round((grandFats / (grandProtein + grandCarbs + grandFats)) * 100)}%</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Save Diet */}
+                      <button
+                        onClick={() => {
+                          if (!dietName.trim() || dietItems.length === 0) return;
+                          if (editingDietIdx !== null) {
+                            setSavedDiets(p => p.map((d, i) => i === editingDietIdx ? { name: dietName.trim(), items: [...dietItems] } : d));
+                            setEditingDietIdx(null);
+                          } else {
+                            setSavedDiets(p => [...p, { name: dietName.trim(), items: [...dietItems] }]);
+                          }
+                          setDietName('');
+                          setDietItems([]);
+                        }}
+                        disabled={!dietName.trim() || dietItems.length === 0}
+                        className="w-full py-2 bg-emerald-500 text-white rounded-lg text-xs font-bold disabled:opacity-40 hover:bg-emerald-500/80 transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20">
+                        <Save size={12} /> {editingDietIdx !== null ? 'Update Diet' : 'Save Diet'}
+                      </button>
+                    </>
+                  );
+                })() : (
+                  <div className="text-center py-4">
+                    <Apple size={24} className="mx-auto text-slate-700 mb-2" />
+                    <p className="text-[10px] text-slate-600">Select a meal session, then add ingredients to build your diet</p>
+                  </div>
+                )}
+
+                {/* Saved Diets List */}
+                {savedDiets.length > 0 && (
+                  <div className="mt-4 pt-3 border-t border-white/5">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Saved Diets ({savedDiets.length})</span>
+                    <div className="space-y-1.5">
+                      {savedDiets.map((diet, idx) => {
+                        let dCal = 0, dProt = 0, dCarb = 0, dFat = 0;
+                        diet.items.forEach(item => {
+                          const info = allDB[item.name];
+                          if (info) { dCal += Math.round(info.cal * item.qty); dProt += +(info.protein * item.qty).toFixed(1); dCarb += +(info.carbs * item.qty).toFixed(1); dFat += +(info.fats * item.qty).toFixed(1); }
+                        });
+                        return (
+                          <div key={idx} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/[0.03] border border-white/5 hover:bg-white/5 transition-all group">
+                            <Leaf size={12} className="text-emerald-400 shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <span className="text-xs font-bold text-white block truncate">{diet.name}</span>
+                              <div className="flex items-center gap-2 text-[8px] mt-0.5">
+                                <span className="text-slate-400">{diet.items.length} items</span>
+                                <span className="text-white">{dCal}cal</span>
+                                <span className="text-gym-accent">{+dProt.toFixed(1)}p</span>
+                                <span className="text-gym-amber">{+dCarb.toFixed(1)}c</span>
+                                <span className="text-gym-rose">{+dFat.toFixed(1)}f</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+                              <button onClick={() => { setDietName(diet.name); setDietItems([...diet.items]); setEditingDietIdx(idx); }}
+                                className="p-1 rounded text-slate-500 hover:text-emerald-400 hover:bg-white/10 transition-all" title="Edit">
+                                <Edit3 size={11} />
+                              </button>
+                              <button onClick={() => { setDietName(diet.name + ' (Copy)'); setDietItems([...diet.items]); setEditingDietIdx(null); }}
+                                className="p-1 rounded text-slate-500 hover:text-gym-secondary hover:bg-white/10 transition-all" title="Duplicate">
+                                <Copy size={11} />
+                              </button>
+                              <button onClick={() => setSavedDiets(p => p.filter((_, i) => i !== idx))}
+                                className="p-1 rounded text-slate-500 hover:text-gym-rose hover:bg-white/10 transition-all" title="Delete">
+                                <Trash2 size={11} />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 )}
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Add / Edit Form */}
+        {/* Main Content Area - Side by Side */}
+        <div className={cn("flex-1 flex overflow-hidden", showAddForm ? 'flex-row' : 'flex-col')}>
+
+        {/* Add / Edit Form - Left Panel */}
         <AnimatePresence>
           {showAddForm && (
-            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden border-b border-white/5 shrink-0">
+            <motion.div initial={{ width: 0, opacity: 0 }} animate={{ width: '50%', opacity: 1 }} exit={{ width: 0, opacity: 0 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="overflow-y-auto overflow-x-hidden border-r border-white/10 shrink-0 h-full w-1/2">
               <div className="px-5 py-4">
                 <h4 className="text-sm font-bold text-white mb-3">{editingItem ? `Edit: ${editingItem}` : 'Add New Ingredient'}</h4>
-                <div className="grid grid-cols-12 gap-2 mb-3">
+                <div className="flex flex-col gap-2 mb-3">
                   {/* Ingredient dropdown */}
-                  <div className="col-span-5 relative">
+                  <div className="relative">
                     <label className="text-[8px] text-slate-500 uppercase font-bold block mb-1">Ingredient Name</label>
                     <input type="text" value={newIng.name}
                       onChange={e => {
@@ -2148,7 +2449,7 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
                     })()}
                   </div>
                   {/* Quantity */}
-                  <div className="col-span-2">
+                  <div>
                     <label className="text-[8px] text-slate-500 uppercase font-bold block mb-1">Quantity</label>
                     <div className="flex items-center gap-1">
                       <button onClick={() => {
@@ -2189,14 +2490,14 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
                     {allDB[newIng.name] && <span className="text-[7px] text-slate-500 mt-0.5 block text-center">per {allDB[newIng.name].unit}</span>}
                   </div>
                   {/* Per-unit info */}
-                  <div className="col-span-2">
+                  <div>
                     <label className="text-[8px] text-slate-500 uppercase font-bold block mb-1">Per Unit</label>
                     <div className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-400">
                       {allDB[newIng.name] ? allDB[newIng.name].unit : 'Custom'}
                     </div>
                   </div>
                   {/* Category dropdown */}
-                  <div className="col-span-3">
+                  <div>
                     <label className="text-[8px] text-slate-500 uppercase font-bold block mb-1">Category</label>
                     <select value={newIng.category} onChange={e => setNewIng(p => ({ ...p, category: e.target.value }))}
                       className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-gym-accent/50">
@@ -2206,7 +2507,7 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
                     </select>
                   </div>
                 </div>
-                <div className="grid grid-cols-5 gap-x-3 gap-y-2 mb-2">
+                <div className="grid grid-cols-2 gap-x-3 gap-y-2 mb-2">
                   {[
                     { key: 'cal', label: 'Calories (kcal)', color: 'text-white', max: 1000 },
                     { key: 'protein', label: 'Protein (g)', color: 'text-gym-accent', max: 100 },
@@ -2226,7 +2527,7 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
                     </div>
                   ))}
                 </div>
-                <div className="grid grid-cols-5 gap-x-3 gap-y-2 mb-3">
+                <div className="grid grid-cols-2 gap-x-3 gap-y-2 mb-3">
                   {[
                     { key: 'sugar', label: 'Sugar (g)', color: 'text-orange-400', max: 100 },
                     { key: 'sodium', label: 'Sodium (mg)', color: 'text-sky-400', max: 1000 },
@@ -2247,22 +2548,35 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
                   ))}
                 </div>
                 {/* Dynamic nutrient fields */}
-                {customNutrientTypes.length > 0 && (
-                  <div className="grid grid-cols-5 gap-x-3 gap-y-2 mb-3">
-                    {customNutrientTypes.map(nt => (
-                      <div key={nt.id}>
-                        <div className="flex items-center justify-between mb-1">
-                          <label className={cn("text-[8px] uppercase font-bold", nt.color)}>{nt.name} ({nt.unit})</label>
-                          <span className={cn("text-[10px] font-bold", nt.color)}>{newIng[nt.id] ?? 0}</span>
+                {/* Custom Nutrient Types with manage controls */}
+                <div className="mb-3">
+                  {customNutrientTypes.length > 0 && (
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-2 mb-2">
+                      {customNutrientTypes.map(nt => (
+                        <div key={nt.id} className="group/nt relative">
+                          <div className="flex items-center justify-between mb-1">
+                            <label className={cn("text-[8px] uppercase font-bold", nt.color)}>{nt.name} ({nt.unit})</label>
+                            <div className="flex items-center gap-1">
+                              <span className={cn("text-[10px] font-bold", nt.color)}>{newIng[nt.id] ?? 0}</span>
+                              <button onClick={() => onDeleteNutrientType(nt.id)}
+                                className="opacity-0 group-hover/nt:opacity-100 p-0.5 rounded text-slate-600 hover:text-gym-rose transition-all" title={`Remove ${nt.name}`}>
+                                <X size={9} />
+                              </button>
+                            </div>
+                          </div>
+                          <input type="range" min={0} max={1000} step={5}
+                            value={newIng[nt.id] ?? 0}
+                            onChange={e => setNewIng(p => ({ ...p, [nt.id]: parseFloat(e.target.value) }))}
+                            className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-white/10 accent-gym-secondary" />
                         </div>
-                        <input type="range" min={0} max={1000} step={5}
-                          value={newIng[nt.id] ?? 0}
-                          onChange={e => setNewIng(p => ({ ...p, [nt.id]: parseFloat(e.target.value) }))}
-                          className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-white/10 accent-gym-secondary" />
-                      </div>
-                    ))}
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  )}
+                  <button onClick={() => { setShowNutrientPopup(true); setPopupNutrient({ name: '', unit: 'mg', color: NUTRIENT_COLORS[(customNutrientTypes.length) % NUTRIENT_COLORS.length], maxValue: 1000, step: 5 }); setEditingNutrient(null); }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.03] border border-dashed border-white/10 text-[9px] font-semibold text-slate-400 hover:text-gym-secondary hover:border-gym-secondary/30 hover:bg-gym-secondary/5 transition-all">
+                    <Plus size={10} /> Add New Nutrient Type
+                  </button>
+                </div>
                 {/* Live Nutrient Preview - only shows non-zero nutrients */}
                 {(() => {
                   const preview = [
@@ -2379,23 +2693,48 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
               {customNutrientTypes.map(nt => (
                 <span key={nt.id} className={cn("text-[9px] font-medium w-12 text-center shrink-0", nt.color)}>{item.extras?.[nt.id] ?? 0}</span>
               ))}
-              <div className="w-14 shrink-0 flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                {item.isCustom && (
+              <div className="w-14 shrink-0 flex justify-end relative">
+                <button onClick={(e) => { e.stopPropagation(); setOpenDropdown(openDropdown === item.name ? null : item.name); }}
+                  className="p-1 rounded text-slate-500 hover:text-white hover:bg-white/10 transition-all opacity-0 group-hover:opacity-100">
+                  <MoreVertical size={13} />
+                </button>
+                {openDropdown === item.name && (
                   <>
-                    <button onClick={() => {
-                      setEditingItem(item.name);
-                      const extrasObj: Record<string, number> = {};
-                      customNutrientTypes.forEach(nt => { extrasObj[nt.id] = item.extras?.[nt.id] ?? 0; });
-                      const qMatch = item.unit.match(/^(\d+\.?\d*)\s*×/);
-                      setNewIng({ name: item.name, unit: qMatch ? qMatch[1] : '1', cal: item.cal, protein: item.protein, carbs: item.carbs, fats: item.fats, sodium: item.sodium, potassium: item.potassium, fiber: item.fiber, sugar: item.sugar, calcium: item.calcium, iron: item.iron, category: item.category, ...extrasObj });
-                      setShowAddForm(true);
-                    }} className="p-1 rounded text-slate-500 hover:text-gym-accent hover:bg-white/5 transition-all" title="Edit">
-                      <Pencil size={11} />
-                    </button>
-                    <button onClick={() => onDeleteCustom(item.name)}
-                      className="p-1 rounded text-slate-500 hover:text-gym-rose hover:bg-gym-rose/5 transition-all" title="Delete">
-                      <Trash2 size={11} />
-                    </button>
+                    <div className="fixed inset-0 z-30" onClick={() => setOpenDropdown(null)} />
+                    <div className="absolute right-0 top-7 z-40 bg-[#1e293b] border border-white/10 rounded-xl shadow-2xl py-1 min-w-[140px] overflow-hidden">
+                      <button onClick={() => {
+                        const extrasObj: Record<string, number> = {};
+                        customNutrientTypes.forEach(nt => { extrasObj[nt.id] = item.extras?.[nt.id] ?? 0; });
+                        const qMatch = item.unit.match(/^(\d+\.?\d*)\s*×/);
+                        if (item.isCustom) {
+                          setEditingItem(item.name);
+                          setNewIng({ name: item.name, unit: qMatch ? qMatch[1] : '1', cal: item.cal, protein: item.protein, carbs: item.carbs, fats: item.fats, sodium: item.sodium, potassium: item.potassium, fiber: item.fiber, sugar: item.sugar, calcium: item.calcium, iron: item.iron, category: item.category, ...extrasObj });
+                        } else {
+                          setEditingItem(null);
+                          setNewIng({ name: item.name, unit: '1', cal: item.cal, protein: item.protein, carbs: item.carbs, fats: item.fats, sodium: item.sodium, potassium: item.potassium, fiber: item.fiber, sugar: item.sugar, calcium: item.calcium, iron: item.iron, category: item.category, ...extrasObj });
+                        }
+                        setShowAddForm(true);
+                        setOpenDropdown(null);
+                      }} className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 text-slate-300 hover:bg-white/10 hover:text-white transition-all">
+                        <Edit3 size={12} className="text-gym-accent" /> {item.isCustom ? 'Edit Ingredient' : 'Edit as Custom'}
+                      </button>
+                      <button onClick={() => {
+                        setEditingItem(null);
+                        const extrasObj: Record<string, number> = {};
+                        customNutrientTypes.forEach(nt => { extrasObj[nt.id] = item.extras?.[nt.id] ?? 0; });
+                        setNewIng({ name: '', unit: '1', cal: item.cal, protein: item.protein, carbs: item.carbs, fats: item.fats, sodium: item.sodium, potassium: item.potassium, fiber: item.fiber, sugar: item.sugar, calcium: item.calcium, iron: item.iron, category: item.category, ...extrasObj });
+                        setShowAddForm(true);
+                        setOpenDropdown(null);
+                      }} className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 text-slate-300 hover:bg-white/10 hover:text-white transition-all">
+                        <Copy size={12} className="text-gym-secondary" /> Duplicate
+                      </button>
+                      {item.isCustom && (
+                        <button onClick={() => { onDeleteCustom(item.name); setOpenDropdown(null); }}
+                          className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 text-slate-300 hover:bg-gym-rose/10 hover:text-gym-rose transition-all border-t border-white/5">
+                          <Trash2 size={12} className="text-gym-rose" /> Delete
+                        </button>
+                      )}
+                    </div>
                   </>
                 )}
               </div>
@@ -2423,6 +2762,533 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
             </div>
           </div>
         </div>
+
+        </div>
+        {/* End Main Content Area */}
+
+        {/* Dish Builder Popup Modal */}
+        <AnimatePresence>
+          {showDishBuilder && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[200] flex items-center justify-center">
+              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowDishBuilder(false)} />
+              <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                className="relative z-10 bg-[#0f1729] border border-white/10 rounded-2xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden max-h-[90vh] flex flex-col">
+                {/* Popup Header */}
+                <div className="bg-gradient-to-r from-purple-600 via-fuchsia-600 to-pink-500 px-6 py-4 flex items-center justify-between shrink-0">
+                  <div>
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <Sparkles size={16} className="text-white/80" />
+                      <span className="text-white/80 text-xs font-medium tracking-wide uppercase">Recipe Builder</span>
+                    </div>
+                    <h3 className="text-lg font-extrabold text-white">{editingDishIdx !== null ? 'Edit Recipe' : 'Create New Recipe'}</h3>
+                  </div>
+                  <button onClick={() => setShowDishBuilder(false)}
+                    className="text-white/60 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-1.5 transition-all">
+                    <X size={16} />
+                  </button>
+                </div>
+
+                {/* Popup Body */}
+                <div className="px-6 py-5 overflow-y-auto flex-1">
+                  {/* Dish Name, Meal Type & Goal */}
+                  <div className="grid grid-cols-4 gap-3 mb-4">
+                    <div className="col-span-2">
+                      <label className="text-[9px] text-slate-400 uppercase font-bold block mb-1.5">Recipe Name</label>
+                      <input type="text" value={dishName} onChange={e => setDishName(e.target.value)}
+                        placeholder="e.g. Protein Oatmeal, Grilled Chicken Salad..."
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-purple-500/50 transition-all" />
+                    </div>
+                    <div>
+                      <label className="text-[9px] text-slate-400 uppercase font-bold block mb-1.5">Meal Type</label>
+                      <select value={dishCategory} onChange={e => setDishCategory(e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-purple-500/50">
+                        {MEAL_CATEGORIES.map(c => (
+                          <option key={c} value={c} className="bg-[#1e293b]">{c}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[9px] text-slate-400 uppercase font-bold block mb-1.5">Goal Type</label>
+                      <select value={dishGoal} onChange={e => setDishGoal(e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-purple-500/50">
+                        {GOAL_TYPES.map(g => (
+                          <option key={g} value={g} className="bg-[#1e293b]">{g}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Add Ingredients Search */}
+                  <div className="mb-4">
+                    <label className="text-[9px] text-slate-400 uppercase font-bold block mb-1.5">Add Ingredients</label>
+                    <div className="relative">
+                      <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                      <input type="text" value={dishSearch}
+                        onChange={e => { setDishSearch(e.target.value); setShowDishSuggestions(true); }}
+                        onFocus={() => setShowDishSuggestions(true)}
+                        onBlur={() => setTimeout(() => setShowDishSuggestions(false), 150)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && dishSearch.trim()) {
+                            const qm = dishSearch.match(/^(\d+\.?\d*)\s+(.+)/);
+                            const qty = qm ? parseFloat(qm[1]) : 1;
+                            const term = (qm ? qm[2] : dishSearch).trim();
+                            const match = Object.keys(allDB).find(n => n.toLowerCase() === term.toLowerCase())
+                              || Object.keys(allDB).find(n => n.toLowerCase().includes(term.toLowerCase()));
+                            if (match) {
+                              setDishItems(prev => {
+                                const existing = prev.find(x => x.name === match);
+                                if (existing) return prev.map(x => x.name === match ? { ...x, qty: x.qty + qty } : x);
+                                return [...prev, { name: match, qty }];
+                              });
+                              setDishSearch('');
+                              setShowDishSuggestions(false);
+                            }
+                          }
+                        }}
+                        placeholder="Type ingredient (e.g. 3 Eggs, Spinach, Olive Oil...)"
+                        className="w-full bg-white/5 border border-white/10 rounded-xl pl-9 pr-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-purple-500/50" />
+                      {showDishSuggestions && dishSearch.length >= 1 && (() => {
+                        const qm = dishSearch.match(/^(\d+\.?\d*)\s+(.+)/);
+                        const qty = qm ? parseFloat(qm[1]) : 1;
+                        const term = (qm ? qm[2] : dishSearch).trim().toLowerCase();
+                        const matches = Object.entries(allDB).filter(([n]) => n.toLowerCase().includes(term)).slice(0, 8);
+                        if (matches.length === 0) return null;
+                        return (
+                          <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-[#1e293b] border border-white/10 rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                            {matches.map(([n, info]) => (
+                              <button key={n} type="button"
+                                onMouseDown={e => e.preventDefault()}
+                                onClick={() => {
+                                  setDishItems(prev => {
+                                    const existing = prev.find(x => x.name === n);
+                                    if (existing) return prev.map(x => x.name === n ? { ...x, qty: x.qty + qty } : x);
+                                    return [...prev, { name: n, qty }];
+                                  });
+                                  setDishSearch('');
+                                  setShowDishSuggestions(false);
+                                }}
+                                className="w-full text-left px-3 py-2 text-xs hover:bg-white/10 transition-colors flex items-center justify-between gap-2 border-b border-white/5 last:border-0">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="text-white font-semibold truncate">{qty > 1 ? `${qty} × ` : ''}{n}</span>
+                                  <span className="text-[7px] px-1.5 py-0.5 rounded bg-white/5 text-slate-400 shrink-0">{info.category}</span>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0 text-[8px]">
+                                  <span className="text-white">{Math.round(info.cal * qty)}cal</span>
+                                  <span className="text-gym-accent">{+(info.protein * qty).toFixed(1)}p</span>
+                                  <span className="text-gym-amber">{+(info.carbs * qty).toFixed(1)}c</span>
+                                  <span className="text-gym-rose">{+(info.fats * qty).toFixed(1)}f</span>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Dish Ingredients List */}
+                  {dishItems.length > 0 ? (() => {
+                    let tCal = 0, tProt = 0, tCarb = 0, tFat = 0, tFiber = 0, tSugar = 0, tSodium = 0, tPotassium = 0, tCalcium = 0, tIron = 0;
+                    dishItems.forEach(item => {
+                      const info = allDB[item.name];
+                      if (info) {
+                        tCal += Math.round(info.cal * item.qty); tProt += +(info.protein * item.qty).toFixed(1);
+                        tCarb += +(info.carbs * item.qty).toFixed(1); tFat += +(info.fats * item.qty).toFixed(1);
+                        tFiber += +(info.fiber * item.qty).toFixed(1); tSugar += +(info.sugar * item.qty).toFixed(1);
+                        tSodium += Math.round(info.sodium * item.qty); tPotassium += Math.round(info.potassium * item.qty);
+                        tCalcium += Math.round(info.calcium * item.qty); tIron += +(info.iron * item.qty).toFixed(1);
+                      }
+                    });
+                    return (
+                      <>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{dishItems.length} Ingredient{dishItems.length > 1 ? 's' : ''}</span>
+                          <button onClick={() => setDishItems([])} className="text-[9px] text-slate-500 hover:text-gym-rose transition-colors">Clear all</button>
+                        </div>
+                        <div className="rounded-xl border border-white/5 overflow-hidden mb-4">
+                          {/* Table header */}
+                          <div className="flex items-center gap-1 px-3 py-1.5 bg-white/[0.04] border-b border-white/5 text-[8px] font-bold uppercase tracking-wider text-slate-500">
+                            <span className="flex-1">Ingredient</span>
+                            <span className="w-[80px] text-center">Qty</span>
+                            <span className="w-12 text-center text-white">Cal</span>
+                            <span className="w-10 text-center text-gym-accent">Prot</span>
+                            <span className="w-10 text-center text-gym-amber">Carb</span>
+                            <span className="w-10 text-center text-gym-rose">Fat</span>
+                            <span className="w-5" />
+                          </div>
+                          {dishItems.map((item, idx) => {
+                            const info = allDB[item.name];
+                            return (
+                              <div key={item.name} className={cn("flex items-center gap-1 px-3 py-1.5 group hover:bg-white/5 transition-all",
+                                idx % 2 === 0 ? 'bg-white/[0.02]' : '')}>
+                                <div className="flex-1 min-w-0 flex items-center gap-1.5">
+                                  <span className="text-[10px] font-semibold text-white truncate">{item.name}</span>
+                                  {info && <span className="text-[7px] px-1 py-0.5 rounded bg-white/5 text-slate-500 shrink-0">{info.unit}</span>}
+                                </div>
+                                <div className="w-[80px] flex items-center justify-center gap-0.5">
+                                  <button onClick={() => setDishItems(p => p.map((x, i) => i === idx ? { ...x, qty: Math.max(0.5, x.qty - 0.5) } : x))}
+                                    className="w-4 h-4 rounded bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 flex items-center justify-center text-[10px] font-bold transition-all">-</button>
+                                  <input type="number" value={item.qty} min={0.5} step={0.5}
+                                    onChange={e => { const v = parseFloat(e.target.value) || 0.5; setDishItems(p => p.map((x, i) => i === idx ? { ...x, qty: v } : x)); }}
+                                    className="w-10 text-center bg-white/5 border border-white/10 rounded px-0.5 py-0.5 text-[9px] text-purple-400 font-bold focus:outline-none focus:border-purple-500/50" />
+                                  <button onClick={() => setDishItems(p => p.map((x, i) => i === idx ? { ...x, qty: x.qty + 0.5 } : x))}
+                                    className="w-4 h-4 rounded bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 flex items-center justify-center text-[10px] font-bold transition-all">+</button>
+                                </div>
+                                <span className="w-12 text-center text-[9px] font-bold text-white">{info ? Math.round(info.cal * item.qty) : '—'}</span>
+                                <span className="w-10 text-center text-[9px] font-bold text-gym-accent">{info ? +(info.protein * item.qty).toFixed(1) : '—'}</span>
+                                <span className="w-10 text-center text-[9px] font-bold text-gym-amber">{info ? +(info.carbs * item.qty).toFixed(1) : '—'}</span>
+                                <span className="w-10 text-center text-[9px] font-bold text-gym-rose">{info ? +(info.fats * item.qty).toFixed(1) : '—'}</span>
+                                <button onClick={() => setDishItems(p => p.filter((_, i) => i !== idx))}
+                                  className="w-5 p-0.5 text-slate-600 hover:text-gym-rose opacity-0 group-hover:opacity-100 transition-all">
+                                  <X size={10} />
+                                </button>
+                              </div>
+                            );
+                          })}
+                          {/* Totals row */}
+                          <div className="flex items-center gap-1 px-3 py-2 bg-white/[0.06] border-t border-white/10">
+                            <span className="flex-1 text-[10px] font-extrabold text-purple-400 uppercase tracking-wider">Total per Dish</span>
+                            <span className="w-[80px] text-center text-[9px] text-slate-400">{dishItems.length} items</span>
+                            <span className="w-12 text-center text-[10px] font-extrabold text-white">{tCal}</span>
+                            <span className="w-10 text-center text-[10px] font-extrabold text-gym-accent">{+tProt.toFixed(1)}</span>
+                            <span className="w-10 text-center text-[10px] font-extrabold text-gym-amber">{+tCarb.toFixed(1)}</span>
+                            <span className="w-10 text-center text-[10px] font-extrabold text-gym-rose">{+tFat.toFixed(1)}</span>
+                            <span className="w-5" />
+                          </div>
+                        </div>
+
+                        {/* Nutrition Summary Cards */}
+                        <div className="mb-4">
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <Flame size={11} className="text-purple-400" />
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Dish Nutrition Summary</span>
+                          </div>
+                          <div className="grid grid-cols-5 gap-1.5">
+                            {[
+                              { label: 'Calories', val: tCal, unit: 'kcal', color: 'text-white', bg: 'bg-white/10' },
+                              { label: 'Protein', val: +tProt.toFixed(1), unit: 'g', color: 'text-gym-accent', bg: 'bg-gym-accent/10' },
+                              { label: 'Carbs', val: +tCarb.toFixed(1), unit: 'g', color: 'text-gym-amber', bg: 'bg-gym-amber/10' },
+                              { label: 'Fat', val: +tFat.toFixed(1), unit: 'g', color: 'text-gym-rose', bg: 'bg-gym-rose/10' },
+                              { label: 'Fiber', val: +tFiber.toFixed(1), unit: 'g', color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
+                              { label: 'Sugar', val: +tSugar.toFixed(1), unit: 'g', color: 'text-orange-400', bg: 'bg-orange-400/10' },
+                              { label: 'Sodium', val: tSodium, unit: 'mg', color: 'text-sky-400', bg: 'bg-sky-400/10' },
+                              { label: 'K', val: tPotassium, unit: 'mg', color: 'text-violet-400', bg: 'bg-violet-400/10' },
+                              { label: 'Calcium', val: tCalcium, unit: 'mg', color: 'text-cyan-300', bg: 'bg-cyan-300/10' },
+                              { label: 'Iron', val: +tIron.toFixed(1), unit: 'mg', color: 'text-red-400', bg: 'bg-red-400/10' },
+                            ].filter(n => n.val > 0).map(n => (
+                              <div key={n.label} className={cn("rounded-lg px-2 py-1.5 border border-white/5", n.bg)}>
+                                <div className={cn("text-[7px] font-bold uppercase tracking-wider mb-0.5", n.color)}>{n.label}</div>
+                                <div className={cn("text-sm font-extrabold", n.color)}>{n.val}<span className="text-[7px] font-normal ml-0.5 opacity-60">{n.unit}</span></div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Macro bar */}
+                        {tProt + tCarb + tFat > 0 && (
+                          <div className="mb-4">
+                            <div className="flex items-center gap-1 h-2 rounded-full overflow-hidden bg-white/5">
+                              <div className="h-full bg-gym-accent rounded-full transition-all" style={{ width: `${(tProt / (tProt + tCarb + tFat)) * 100}%` }} />
+                              <div className="h-full bg-gym-amber rounded-full transition-all" style={{ width: `${(tCarb / (tProt + tCarb + tFat)) * 100}%` }} />
+                              <div className="h-full bg-gym-rose rounded-full transition-all" style={{ width: `${(tFat / (tProt + tCarb + tFat)) * 100}%` }} />
+                            </div>
+                            <div className="flex items-center gap-4 mt-1 text-[8px] text-slate-400">
+                              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gym-accent" />Protein {Math.round((tProt / (tProt + tCarb + tFat)) * 100)}%</span>
+                              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gym-amber" />Carbs {Math.round((tCarb / (tProt + tCarb + tFat)) * 100)}%</span>
+                              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gym-rose" />Fat {Math.round((tFat / (tProt + tCarb + tFat)) * 100)}%</span>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })() : (
+                    <div className="text-center py-8">
+                      <div className="w-14 h-14 rounded-2xl bg-purple-500/10 flex items-center justify-center mx-auto mb-3">
+                        <Sparkles size={24} className="text-purple-400/40" />
+                      </div>
+                      <p className="text-slate-400 text-sm font-medium mb-1">No ingredients added yet</p>
+                      <p className="text-slate-600 text-xs">Search and add ingredients above to build your dish recipe</p>
+                    </div>
+                  )}
+
+                  {/* Saved Recipes List */}
+                  {savedDishes.length > 0 && (
+                    <div className="pt-4 border-t border-white/5">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Saved Recipes ({savedDishes.length})</span>
+                      </div>
+                      {/* Filter Tabs */}
+                      <div className="flex gap-1 mb-2 flex-wrap">
+                        <button onClick={() => { setDishFilterCat('All'); setDishFilterGoal('All'); }}
+                          className={cn("px-2 py-0.5 rounded text-[8px] font-bold border transition-all", dishFilterCat === 'All' && dishFilterGoal === 'All' ? 'bg-purple-500/10 border-purple-500/30 text-purple-400' : 'bg-white/5 border-white/5 text-slate-500 hover:text-white')}>All</button>
+                        {MEAL_CATEGORIES.map(c => (
+                          <button key={c} onClick={() => { setDishFilterCat(c); setDishFilterGoal('All'); }}
+                            className={cn("px-2 py-0.5 rounded text-[8px] font-bold border transition-all", dishFilterCat === c ? 'bg-purple-500/10 border-purple-500/30 text-purple-400' : 'bg-white/5 border-white/5 text-slate-500 hover:text-white')}>{c}</button>
+                        ))}
+                      </div>
+                      <div className="flex gap-1 mb-3 flex-wrap">
+                        {GOAL_TYPES.map(g => {
+                          const goalColors: Record<string, string> = { 'Weight Loss': 'text-gym-rose', 'Muscle Gain': 'text-gym-accent', 'Maintenance': 'text-gym-amber' };
+                          return (
+                            <button key={g} onClick={() => { setDishFilterGoal(dishFilterGoal === g ? 'All' : g); }}
+                              className={cn("px-2 py-0.5 rounded text-[8px] font-bold border transition-all", dishFilterGoal === g ? 'bg-white/10 border-white/20 ' + (goalColors[g] || 'text-white') : 'bg-white/5 border-white/5 text-slate-500 hover:text-white')}>{g}</button>
+                          );
+                        })}
+                      </div>
+                      <div className="space-y-1.5 max-h-52 overflow-y-auto">
+                        {savedDishes.filter(d => (dishFilterCat === 'All' || d.category === dishFilterCat) && (dishFilterGoal === 'All' || d.goal === dishFilterGoal)).map((dish, _filteredIdx) => {
+                          const idx = savedDishes.indexOf(dish);
+                          let dCal = 0, dProt = 0, dCarb = 0, dFat = 0;
+                          dish.items.forEach(item => {
+                            const info = allDB[item.name];
+                            if (info) { dCal += Math.round(info.cal * item.qty); dProt += +(info.protein * item.qty).toFixed(1); dCarb += +(info.carbs * item.qty).toFixed(1); dFat += +(info.fats * item.qty).toFixed(1); }
+                          });
+                          const goalColors: Record<string, string> = { 'Weight Loss': 'text-gym-rose bg-gym-rose/10', 'Muscle Gain': 'text-gym-accent bg-gym-accent/10', 'Maintenance': 'text-gym-amber bg-gym-amber/10' };
+                          return (
+                            <div key={idx} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/[0.03] border border-white/5 hover:bg-white/5 transition-all group">
+                              <Sparkles size={12} className="text-purple-400 shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-bold text-white truncate">{dish.name}</span>
+                                  <span className="text-[7px] px-1.5 py-0.5 rounded bg-white/5 text-slate-500 shrink-0">{dish.category}</span>
+                                  <span className={cn("text-[7px] px-1.5 py-0.5 rounded shrink-0 font-bold", goalColors[dish.goal] || 'text-slate-400 bg-white/5')}>{dish.goal}</span>
+                                </div>
+                                <div className="flex items-center gap-2 text-[8px] mt-0.5">
+                                  <span className="text-slate-400">{dish.items.length} ingredients</span>
+                                  <span className="text-white">{dCal}cal</span>
+                                  <span className="text-gym-accent">{+dProt.toFixed(1)}p</span>
+                                  <span className="text-gym-amber">{+dCarb.toFixed(1)}c</span>
+                                  <span className="text-gym-rose">{+dFat.toFixed(1)}f</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+                                <button onClick={() => { setDishName(dish.name); setDishCategory(dish.category); setDishGoal(dish.goal); setDishItems([...dish.items]); setEditingDishIdx(idx); }}
+                                  className="p-1 rounded text-slate-500 hover:text-purple-400 hover:bg-white/10 transition-all" title="Edit">
+                                  <Edit3 size={11} />
+                                </button>
+                                <button onClick={() => { setDishName(dish.name + ' (Copy)'); setDishCategory(dish.category); setDishGoal(dish.goal); setDishItems([...dish.items]); setEditingDishIdx(null); }}
+                                  className="p-1 rounded text-slate-500 hover:text-gym-secondary hover:bg-white/10 transition-all" title="Duplicate">
+                                  <Copy size={11} />
+                                </button>
+                                <button onClick={() => setSavedDishes(p => p.filter((_, i) => i !== idx))}
+                                  className="p-1 rounded text-slate-500 hover:text-gym-rose hover:bg-white/10 transition-all" title="Delete">
+                                  <Trash2 size={11} />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Popup Footer */}
+                <div className="px-6 py-4 border-t border-white/5 flex gap-3 shrink-0">
+                  <button onClick={() => setShowDishBuilder(false)}
+                    className="flex-1 py-2.5 bg-white/5 border border-white/10 rounded-xl text-xs font-medium text-slate-400 hover:bg-white/10 transition-all">
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!dishName.trim() || dishItems.length === 0) return;
+                      if (editingDishIdx !== null) {
+                        setSavedDishes(p => p.map((d, i) => i === editingDishIdx ? { name: dishName.trim(), category: dishCategory, goal: dishGoal, items: [...dishItems] } : d));
+                        setEditingDishIdx(null);
+                      } else {
+                        setSavedDishes(p => [...p, { name: dishName.trim(), category: dishCategory, goal: dishGoal, items: [...dishItems] }]);
+                      }
+                      setDishName('');
+                      setDishItems([]);
+                      setDishCategory('Breakfast');
+                      setDishGoal('Maintenance');
+                    }}
+                    disabled={!dishName.trim() || dishItems.length === 0}
+                    className="flex-1 py-2.5 bg-purple-600 text-white rounded-xl text-xs font-bold disabled:opacity-40 hover:bg-purple-600/80 transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-purple-600/20">
+                    <Save size={13} /> {editingDishIdx !== null ? 'Update Recipe' : 'Save Recipe'}
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Nutrient Types Popup Modal */}
+        <AnimatePresence>
+          {showNutrientPopup && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[200] flex items-center justify-center">
+              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => { setShowNutrientPopup(false); setEditingNutrient(null); }} />
+              <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                className="relative z-10 bg-[#0f1729] border border-white/10 rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+                {/* Popup Header */}
+                <div className="bg-gradient-to-r from-gym-secondary via-indigo-600 to-purple-600 px-6 py-4 flex items-center justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <Zap size={16} className="text-white/80" />
+                      <span className="text-white/80 text-xs font-medium tracking-wide uppercase">Nutrition Manager</span>
+                    </div>
+                    <h3 className="text-lg font-extrabold text-white">{editingNutrient ? 'Edit Nutrient Type' : 'Add New Nutrient Type'}</h3>
+                  </div>
+                  <button onClick={() => { setShowNutrientPopup(false); setEditingNutrient(null); }}
+                    className="text-white/60 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-1.5 transition-all">
+                    <X size={16} />
+                  </button>
+                </div>
+
+                {/* Popup Body */}
+                <div className="px-6 py-5">
+                  <div className="space-y-4">
+                    {/* Nutrient Name */}
+                    <div>
+                      <label className="text-[9px] text-slate-400 uppercase font-bold block mb-1.5">Nutrient Name</label>
+                      <input type="text" value={popupNutrient.name}
+                        onChange={e => setPopupNutrient(p => ({ ...p, name: e.target.value }))}
+                        placeholder="e.g. Vitamin A, Vitamin B12, Magnesium..."
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-gym-secondary/50 transition-all" />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* Unit */}
+                      <div>
+                        <label className="text-[9px] text-slate-400 uppercase font-bold block mb-1.5">Unit</label>
+                        <input type="text" value={popupNutrient.unit}
+                          onChange={e => setPopupNutrient(p => ({ ...p, unit: e.target.value }))}
+                          placeholder="mg, μg, IU"
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-gym-secondary/50 transition-all" />
+                      </div>
+                      {/* Color */}
+                      <div>
+                        <label className="text-[9px] text-slate-400 uppercase font-bold block mb-1.5">Color</label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {NUTRIENT_COLORS.map(c => (
+                            <button key={c} onClick={() => setPopupNutrient(p => ({ ...p, color: c }))}
+                              className={cn("w-6 h-6 rounded-full border-2 transition-all flex items-center justify-center",
+                                popupNutrient.color === c ? 'border-white scale-110' : 'border-transparent hover:border-white/30')}>
+                              <span className={cn("w-4 h-4 rounded-full", c.replace('text-', 'bg-'))} />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* Max Slider Value */}
+                      <div>
+                        <label className="text-[9px] text-slate-400 uppercase font-bold block mb-1.5">Max Slider Value</label>
+                        <input type="number" value={popupNutrient.maxValue} min={1}
+                          onChange={e => setPopupNutrient(p => ({ ...p, maxValue: parseInt(e.target.value) || 1000 }))}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-gym-secondary/50 transition-all" />
+                      </div>
+                      {/* Step */}
+                      <div>
+                        <label className="text-[9px] text-slate-400 uppercase font-bold block mb-1.5">Slider Step</label>
+                        <input type="number" value={popupNutrient.step} min={0.1} step={0.1}
+                          onChange={e => setPopupNutrient(p => ({ ...p, step: parseFloat(e.target.value) || 1 }))}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-gym-secondary/50 transition-all" />
+                      </div>
+                    </div>
+
+                    {/* Preview */}
+                    {popupNutrient.name.trim() && (
+                      <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5">
+                        <span className="text-[8px] text-slate-500 uppercase font-bold block mb-2">Preview — how it will appear in the ingredient form</span>
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className={cn("text-[8px] uppercase font-bold", popupNutrient.color)}>{popupNutrient.name} ({popupNutrient.unit})</label>
+                            <span className={cn("text-[10px] font-bold", popupNutrient.color)}>{Math.round(popupNutrient.maxValue / 3)}</span>
+                          </div>
+                          <input type="range" min={0} max={popupNutrient.maxValue} step={popupNutrient.step}
+                            value={Math.round(popupNutrient.maxValue / 3)} readOnly
+                            className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-white/10 accent-gym-secondary" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* All Nutrient Types List */}
+                  <div className="mt-5 pt-4 border-t border-white/5">
+                    <span className="text-[9px] text-slate-400 uppercase font-bold block mb-2">Built-in Nutrients</span>
+                    <div className="flex flex-wrap gap-1.5 mb-4">
+                      {[
+                        { id: 'cal', name: 'Calories', unit: 'kcal', color: 'text-white' },
+                        { id: 'protein', name: 'Protein', unit: 'g', color: 'text-gym-accent' },
+                        { id: 'carbs', name: 'Carbs', unit: 'g', color: 'text-gym-amber' },
+                        { id: 'fats', name: 'Fat', unit: 'g', color: 'text-gym-rose' },
+                        { id: 'fiber', name: 'Fiber', unit: 'g', color: 'text-emerald-400' },
+                        { id: 'sugar', name: 'Sugar', unit: 'g', color: 'text-orange-400' },
+                        { id: 'sodium', name: 'Sodium', unit: 'mg', color: 'text-sky-400' },
+                        { id: 'potassium', name: 'Potassium', unit: 'mg', color: 'text-violet-400' },
+                        { id: 'calcium', name: 'Calcium', unit: 'mg', color: 'text-cyan-300' },
+                        { id: 'iron', name: 'Iron', unit: 'mg', color: 'text-red-400' },
+                      ].map(nt => (
+                        <div key={nt.id} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.03] border border-white/5">
+                          <span className={cn("w-1.5 h-1.5 rounded-full", nt.color.replace('text-', 'bg-'))} />
+                          <span className={cn("text-[10px] font-semibold", nt.color)}>{nt.name}</span>
+                          <span className="text-[7px] text-slate-600">({nt.unit})</span>
+                          <span className="text-[6px] px-1 py-0.5 rounded bg-white/5 text-slate-500 font-bold">CORE</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <span className="text-[9px] text-slate-400 uppercase font-bold block mb-2">
+                      Custom Nutrients {customNutrientTypes.length > 0 && <span className="text-gym-secondary">({customNutrientTypes.length})</span>}
+                    </span>
+                    {customNutrientTypes.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {customNutrientTypes.map(nt => (
+                          <div key={nt.id} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/5 group">
+                            <span className={cn("w-2 h-2 rounded-full", nt.color.replace('text-', 'bg-'))} />
+                            <span className="text-xs font-semibold text-white">{nt.name}</span>
+                            <span className="text-[8px] text-slate-500">({nt.unit})</span>
+                            <button onClick={() => { setEditingNutrient(nt.id); setPopupNutrient({ name: nt.name, unit: nt.unit, color: nt.color, maxValue: 1000, step: 5 }); }}
+                              className="ml-1 p-0.5 rounded text-slate-600 hover:text-gym-secondary opacity-0 group-hover:opacity-100 transition-all" title="Edit">
+                              <Pencil size={9} />
+                            </button>
+                            <button onClick={() => onDeleteNutrientType(nt.id)}
+                              className="p-0.5 rounded text-slate-600 hover:text-gym-rose opacity-0 group-hover:opacity-100 transition-all" title="Delete">
+                              <Trash2 size={9} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[10px] text-slate-600 italic">No custom nutrients yet. Use the form above to add Vitamin A, B12, Magnesium, etc.</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Popup Footer */}
+                <div className="px-6 py-4 border-t border-white/5 flex gap-3">
+                  <button onClick={() => { setShowNutrientPopup(false); setEditingNutrient(null); }}
+                    className="flex-1 py-2.5 bg-white/5 border border-white/10 rounded-xl text-xs font-medium text-slate-400 hover:bg-white/10 transition-all">
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!popupNutrient.name.trim()) return;
+                      const id = popupNutrient.name.trim().toLowerCase().replace(/\s+/g, '_');
+                      if (editingNutrient) {
+                        onUpdateNutrientType(editingNutrient, { id, name: popupNutrient.name.trim(), unit: popupNutrient.unit, color: popupNutrient.color });
+                        setEditingNutrient(null);
+                      } else {
+                        onAddNutrientType({ id, name: popupNutrient.name.trim(), unit: popupNutrient.unit, color: popupNutrient.color });
+                      }
+                      setPopupNutrient({ name: '', unit: 'mg', color: NUTRIENT_COLORS[(customNutrientTypes.length + 1) % NUTRIENT_COLORS.length], maxValue: 1000, step: 5 });
+                      setShowNutrientPopup(false);
+                    }}
+                    disabled={!popupNutrient.name.trim()}
+                    className="flex-1 py-2.5 bg-gym-secondary text-white rounded-xl text-xs font-bold disabled:opacity-40 hover:bg-gym-secondary/80 transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-gym-secondary/20">
+                    <Save size={13} /> {editingNutrient ? 'Update Nutrient' : 'Add Nutrient'}
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
     </div>
   );
