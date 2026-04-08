@@ -464,6 +464,34 @@ async function startServer() {
     }
   });
 
+  app.put("/api/members/:id", (req, res) => {
+    const { id } = req.params;
+    const { name, email, membership_type, expiry_date, goal, status } = req.body;
+    try {
+      db.prepare(
+        "UPDATE members SET name = ?, email = ?, membership_type = ?, expiry_date = ?, goal = ?, status = ? WHERE id = ?"
+      ).run(name, email, membership_type, expiry_date, goal, status, id);
+      const updated = db.prepare("SELECT * FROM members WHERE id = ?").get(id);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/members/:id", (req, res) => {
+    const { id } = req.params;
+    try {
+      const result = db.prepare("DELETE FROM members WHERE id = ?").run(id);
+      if (result.changes === 0) {
+        res.status(404).json({ error: "Member not found" });
+      } else {
+        res.json({ success: true });
+      }
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
   app.get("/api/staff", (req, res) => {
     const staff = db.prepare(`
       SELECT s.*,

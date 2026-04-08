@@ -6,7 +6,7 @@ import {
   Users, Activity, ChevronDown, X, Check, AlertTriangle,
   Dumbbell, Clock, Calendar, Flame,
   Award, Star, Filter, ArrowUpDown,
-  CheckSquare, Square, BarChart2, Sparkles
+  CheckSquare, Square, BarChart2, Sparkles, ChevronLeft, ChevronRight, Apple
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { GlassCard } from '@/src/components/DashboardElements';
@@ -79,14 +79,101 @@ const DURATION_OPTIONS = [
 const EXERCISE_CATEGORIES = ['Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Core', 'Cardio', 'Full Body'];
 
 const INITIAL_ROUTINES: RoutineItem[] = [
-  { id: 1, name: 'Bench Press',   category: 'Chest',    type: 'reps', minReps: 8,  maxReps: 20, minTime: 0,  maxTime: 0,  minWeight: 20, maxWeight: 80  },
-  { id: 2, name: 'Cycling',       category: 'Cardio',   type: 'time', minReps: 0,  maxReps: 0,  minTime: 10, maxTime: 60, minWeight: 0,  maxWeight: 0   },
-  { id: 3, name: 'Squats',        category: 'Legs',     type: 'reps', minReps: 10, maxReps: 30, minTime: 0,  maxTime: 0,  minWeight: 40, maxWeight: 120 },
-  { id: 4, name: 'Treadmill Run', category: 'Cardio',   type: 'time', minReps: 0,  maxReps: 0,  minTime: 15, maxTime: 45, minWeight: 0,  maxWeight: 0   },
-  { id: 5, name: 'Pull-Ups',      category: 'Back',     type: 'reps', minReps: 5,  maxReps: 25, minTime: 0,  maxTime: 0,  minWeight: 0,  maxWeight: 40  },
-  { id: 6, name: 'Plank Hold',    category: 'Core',     type: 'time', minReps: 0,  maxReps: 0,  minTime: 1,  maxTime: 5,  minWeight: 0,  maxWeight: 0   },
-  { id: 7, name: 'Deadlift',      category: 'Back',     type: 'reps', minReps: 3,  maxReps: 12, minTime: 0,  maxTime: 0,  minWeight: 60, maxWeight: 180 },
-  { id: 8, name: 'Jump Rope',     category: 'Cardio',   type: 'time', minReps: 0,  maxReps: 0,  minTime: 5,  maxTime: 30, minWeight: 0,  maxWeight: 0   },
+  // ── Chest (10) ──
+  { id: 1,  name: 'Bench Press',           category: 'Chest',     type: 'reps', minReps: 8,  maxReps: 20, minTime: 0,  maxTime: 0,  minWeight: 20,  maxWeight: 100 },
+  { id: 2,  name: 'Incline Bench Press',   category: 'Chest',     type: 'reps', minReps: 8,  maxReps: 15, minTime: 0,  maxTime: 0,  minWeight: 15,  maxWeight: 80  },
+  { id: 3,  name: 'Decline Bench Press',   category: 'Chest',     type: 'reps', minReps: 8,  maxReps: 15, minTime: 0,  maxTime: 0,  minWeight: 20,  maxWeight: 90  },
+  { id: 4,  name: 'Dumbbell Fly',          category: 'Chest',     type: 'reps', minReps: 10, maxReps: 20, minTime: 0,  maxTime: 0,  minWeight: 5,   maxWeight: 30  },
+  { id: 5,  name: 'Incline Dumbbell Press',category: 'Chest',     type: 'reps', minReps: 8,  maxReps: 15, minTime: 0,  maxTime: 0,  minWeight: 10,  maxWeight: 45  },
+  { id: 6,  name: 'Cable Crossover',       category: 'Chest',     type: 'reps', minReps: 10, maxReps: 20, minTime: 0,  maxTime: 0,  minWeight: 5,   maxWeight: 30  },
+  { id: 7,  name: 'Push-Ups',              category: 'Chest',     type: 'reps', minReps: 10, maxReps: 50, minTime: 0,  maxTime: 0,  minWeight: 0,   maxWeight: 0   },
+  { id: 8,  name: 'Chest Dips',            category: 'Chest',     type: 'reps', minReps: 8,  maxReps: 25, minTime: 0,  maxTime: 0,  minWeight: 0,   maxWeight: 30  },
+  { id: 9,  name: 'Pec Deck Machine',      category: 'Chest',     type: 'reps', minReps: 10, maxReps: 20, minTime: 0,  maxTime: 0,  minWeight: 10,  maxWeight: 60  },
+  { id: 10, name: 'Landmine Press',        category: 'Chest',     type: 'reps', minReps: 8,  maxReps: 15, minTime: 0,  maxTime: 0,  minWeight: 10,  maxWeight: 40  },
+
+  // ── Back (10) ──
+  { id: 11, name: 'Pull-Ups',              category: 'Back',      type: 'reps', minReps: 5,  maxReps: 25, minTime: 0,  maxTime: 0,  minWeight: 0,   maxWeight: 40  },
+  { id: 12, name: 'Deadlift',              category: 'Back',      type: 'reps', minReps: 3,  maxReps: 12, minTime: 0,  maxTime: 0,  minWeight: 60,  maxWeight: 200 },
+  { id: 13, name: 'Barbell Row',           category: 'Back',      type: 'reps', minReps: 8,  maxReps: 15, minTime: 0,  maxTime: 0,  minWeight: 20,  maxWeight: 80  },
+  { id: 14, name: 'Lat Pulldown',          category: 'Back',      type: 'reps', minReps: 10, maxReps: 20, minTime: 0,  maxTime: 0,  minWeight: 20,  maxWeight: 80  },
+  { id: 15, name: 'Seated Cable Row',      category: 'Back',      type: 'reps', minReps: 10, maxReps: 20, minTime: 0,  maxTime: 0,  minWeight: 15,  maxWeight: 70  },
+  { id: 16, name: 'T-Bar Row',             category: 'Back',      type: 'reps', minReps: 8,  maxReps: 15, minTime: 0,  maxTime: 0,  minWeight: 20,  maxWeight: 70  },
+  { id: 17, name: 'Dumbbell Row',          category: 'Back',      type: 'reps', minReps: 8,  maxReps: 15, minTime: 0,  maxTime: 0,  minWeight: 10,  maxWeight: 50  },
+  { id: 18, name: 'Chin-Ups',              category: 'Back',      type: 'reps', minReps: 5,  maxReps: 20, minTime: 0,  maxTime: 0,  minWeight: 0,   maxWeight: 30  },
+  { id: 19, name: 'Face Pulls',            category: 'Back',      type: 'reps', minReps: 12, maxReps: 25, minTime: 0,  maxTime: 0,  minWeight: 5,   maxWeight: 25  },
+  { id: 20, name: 'Hyperextensions',       category: 'Back',      type: 'reps', minReps: 10, maxReps: 20, minTime: 0,  maxTime: 0,  minWeight: 0,   maxWeight: 20  },
+
+  // ── Legs (12) ──
+  { id: 21, name: 'Squats',                category: 'Legs',      type: 'reps', minReps: 8,  maxReps: 25, minTime: 0,  maxTime: 0,  minWeight: 40,  maxWeight: 150 },
+  { id: 22, name: 'Leg Press',             category: 'Legs',      type: 'reps', minReps: 10, maxReps: 20, minTime: 0,  maxTime: 0,  minWeight: 50,  maxWeight: 200 },
+  { id: 23, name: 'Lunges',                category: 'Legs',      type: 'reps', minReps: 10, maxReps: 20, minTime: 0,  maxTime: 0,  minWeight: 0,   maxWeight: 40  },
+  { id: 24, name: 'Leg Extension',         category: 'Legs',      type: 'reps', minReps: 10, maxReps: 20, minTime: 0,  maxTime: 0,  minWeight: 15,  maxWeight: 60  },
+  { id: 25, name: 'Leg Curl',              category: 'Legs',      type: 'reps', minReps: 10, maxReps: 20, minTime: 0,  maxTime: 0,  minWeight: 15,  maxWeight: 50  },
+  { id: 26, name: 'Romanian Deadlift',     category: 'Legs',      type: 'reps', minReps: 8,  maxReps: 15, minTime: 0,  maxTime: 0,  minWeight: 30,  maxWeight: 100 },
+  { id: 27, name: 'Calf Raises',           category: 'Legs',      type: 'reps', minReps: 15, maxReps: 30, minTime: 0,  maxTime: 0,  minWeight: 20,  maxWeight: 80  },
+  { id: 28, name: 'Bulgarian Split Squat', category: 'Legs',      type: 'reps', minReps: 8,  maxReps: 15, minTime: 0,  maxTime: 0,  minWeight: 0,   maxWeight: 40  },
+  { id: 29, name: 'Hip Thrust',            category: 'Legs',      type: 'reps', minReps: 8,  maxReps: 20, minTime: 0,  maxTime: 0,  minWeight: 20,  maxWeight: 100 },
+  { id: 30, name: 'Goblet Squat',          category: 'Legs',      type: 'reps', minReps: 10, maxReps: 20, minTime: 0,  maxTime: 0,  minWeight: 8,   maxWeight: 32  },
+  { id: 31, name: 'Hack Squat',            category: 'Legs',      type: 'reps', minReps: 8,  maxReps: 15, minTime: 0,  maxTime: 0,  minWeight: 40,  maxWeight: 120 },
+  { id: 32, name: 'Wall Sit',              category: 'Legs',      type: 'time', minReps: 0,  maxReps: 0,  minTime: 1,  maxTime: 5,  minWeight: 0,   maxWeight: 0   },
+
+  // ── Shoulders (8) ──
+  { id: 33, name: 'Overhead Press',        category: 'Shoulders', type: 'reps', minReps: 8,  maxReps: 15, minTime: 0,  maxTime: 0,  minWeight: 15,  maxWeight: 60  },
+  { id: 34, name: 'Lateral Raises',        category: 'Shoulders', type: 'reps', minReps: 10, maxReps: 25, minTime: 0,  maxTime: 0,  minWeight: 3,   maxWeight: 15  },
+  { id: 35, name: 'Front Raises',          category: 'Shoulders', type: 'reps', minReps: 10, maxReps: 20, minTime: 0,  maxTime: 0,  minWeight: 3,   maxWeight: 15  },
+  { id: 36, name: 'Arnold Press',          category: 'Shoulders', type: 'reps', minReps: 8,  maxReps: 15, minTime: 0,  maxTime: 0,  minWeight: 8,   maxWeight: 30  },
+  { id: 37, name: 'Reverse Fly',           category: 'Shoulders', type: 'reps', minReps: 10, maxReps: 20, minTime: 0,  maxTime: 0,  minWeight: 3,   maxWeight: 15  },
+  { id: 38, name: 'Upright Row',           category: 'Shoulders', type: 'reps', minReps: 10, maxReps: 20, minTime: 0,  maxTime: 0,  minWeight: 10,  maxWeight: 40  },
+  { id: 39, name: 'Shrugs',                category: 'Shoulders', type: 'reps', minReps: 10, maxReps: 25, minTime: 0,  maxTime: 0,  minWeight: 15,  maxWeight: 50  },
+  { id: 40, name: 'Military Press',        category: 'Shoulders', type: 'reps', minReps: 6,  maxReps: 12, minTime: 0,  maxTime: 0,  minWeight: 20,  maxWeight: 60  },
+
+  // ── Arms (10) ──
+  { id: 41, name: 'Bicep Curls',           category: 'Arms',      type: 'reps', minReps: 10, maxReps: 25, minTime: 0,  maxTime: 0,  minWeight: 5,   maxWeight: 25  },
+  { id: 42, name: 'Hammer Curls',          category: 'Arms',      type: 'reps', minReps: 10, maxReps: 20, minTime: 0,  maxTime: 0,  minWeight: 5,   maxWeight: 25  },
+  { id: 43, name: 'Tricep Pushdown',       category: 'Arms',      type: 'reps', minReps: 10, maxReps: 25, minTime: 0,  maxTime: 0,  minWeight: 10,  maxWeight: 40  },
+  { id: 44, name: 'Skull Crushers',        category: 'Arms',      type: 'reps', minReps: 8,  maxReps: 15, minTime: 0,  maxTime: 0,  minWeight: 10,  maxWeight: 35  },
+  { id: 45, name: 'Preacher Curl',         category: 'Arms',      type: 'reps', minReps: 8,  maxReps: 15, minTime: 0,  maxTime: 0,  minWeight: 5,   maxWeight: 25  },
+  { id: 46, name: 'Concentration Curl',    category: 'Arms',      type: 'reps', minReps: 10, maxReps: 20, minTime: 0,  maxTime: 0,  minWeight: 3,   maxWeight: 20  },
+  { id: 47, name: 'Overhead Tricep Extension', category: 'Arms',  type: 'reps', minReps: 10, maxReps: 20, minTime: 0,  maxTime: 0,  minWeight: 8,   maxWeight: 30  },
+  { id: 48, name: 'Cable Curl',            category: 'Arms',      type: 'reps', minReps: 10, maxReps: 20, minTime: 0,  maxTime: 0,  minWeight: 5,   maxWeight: 25  },
+  { id: 49, name: 'Wrist Curls',           category: 'Arms',      type: 'reps', minReps: 15, maxReps: 30, minTime: 0,  maxTime: 0,  minWeight: 3,   maxWeight: 15  },
+  { id: 50, name: 'Diamond Push-Ups',      category: 'Arms',      type: 'reps', minReps: 8,  maxReps: 30, minTime: 0,  maxTime: 0,  minWeight: 0,   maxWeight: 0   },
+
+  // ── Core (10) ──
+  { id: 51, name: 'Plank Hold',            category: 'Core',      type: 'time', minReps: 0,  maxReps: 0,  minTime: 1,  maxTime: 5,  minWeight: 0,   maxWeight: 0   },
+  { id: 52, name: 'Crunches',              category: 'Core',      type: 'reps', minReps: 15, maxReps: 50, minTime: 0,  maxTime: 0,  minWeight: 0,   maxWeight: 10  },
+  { id: 53, name: 'Russian Twists',        category: 'Core',      type: 'reps', minReps: 15, maxReps: 40, minTime: 0,  maxTime: 0,  minWeight: 0,   maxWeight: 15  },
+  { id: 54, name: 'Leg Raises',            category: 'Core',      type: 'reps', minReps: 10, maxReps: 25, minTime: 0,  maxTime: 0,  minWeight: 0,   maxWeight: 0   },
+  { id: 55, name: 'Mountain Climbers',     category: 'Core',      type: 'time', minReps: 0,  maxReps: 0,  minTime: 1,  maxTime: 5,  minWeight: 0,   maxWeight: 0   },
+  { id: 56, name: 'Bicycle Crunches',      category: 'Core',      type: 'reps', minReps: 15, maxReps: 40, minTime: 0,  maxTime: 0,  minWeight: 0,   maxWeight: 0   },
+  { id: 57, name: 'Ab Wheel Rollout',      category: 'Core',      type: 'reps', minReps: 8,  maxReps: 20, minTime: 0,  maxTime: 0,  minWeight: 0,   maxWeight: 0   },
+  { id: 58, name: 'Hanging Knee Raises',   category: 'Core',      type: 'reps', minReps: 8,  maxReps: 20, minTime: 0,  maxTime: 0,  minWeight: 0,   maxWeight: 0   },
+  { id: 59, name: 'Side Plank',            category: 'Core',      type: 'time', minReps: 0,  maxReps: 0,  minTime: 1,  maxTime: 3,  minWeight: 0,   maxWeight: 0   },
+  { id: 60, name: 'Dead Bug',              category: 'Core',      type: 'reps', minReps: 10, maxReps: 20, minTime: 0,  maxTime: 0,  minWeight: 0,   maxWeight: 0   },
+
+  // ── Cardio (10) ──
+  { id: 61, name: 'Treadmill Run',         category: 'Cardio',    type: 'time', minReps: 0,  maxReps: 0,  minTime: 10, maxTime: 60, minWeight: 0,   maxWeight: 0   },
+  { id: 62, name: 'Cycling',               category: 'Cardio',    type: 'time', minReps: 0,  maxReps: 0,  minTime: 10, maxTime: 60, minWeight: 0,   maxWeight: 0   },
+  { id: 63, name: 'Jump Rope',             category: 'Cardio',    type: 'time', minReps: 0,  maxReps: 0,  minTime: 5,  maxTime: 30, minWeight: 0,   maxWeight: 0   },
+  { id: 64, name: 'Rowing Machine',        category: 'Cardio',    type: 'time', minReps: 0,  maxReps: 0,  minTime: 10, maxTime: 45, minWeight: 0,   maxWeight: 0   },
+  { id: 65, name: 'Elliptical',            category: 'Cardio',    type: 'time', minReps: 0,  maxReps: 0,  minTime: 15, maxTime: 45, minWeight: 0,   maxWeight: 0   },
+  { id: 66, name: 'Stair Climber',         category: 'Cardio',    type: 'time', minReps: 0,  maxReps: 0,  minTime: 10, maxTime: 30, minWeight: 0,   maxWeight: 0   },
+  { id: 67, name: 'Swimming',              category: 'Cardio',    type: 'time', minReps: 0,  maxReps: 0,  minTime: 15, maxTime: 60, minWeight: 0,   maxWeight: 0   },
+  { id: 68, name: 'Burpees',               category: 'Cardio',    type: 'reps', minReps: 8,  maxReps: 25, minTime: 0,  maxTime: 0,  minWeight: 0,   maxWeight: 0   },
+  { id: 69, name: 'High Knees',            category: 'Cardio',    type: 'time', minReps: 0,  maxReps: 0,  minTime: 1,  maxTime: 5,  minWeight: 0,   maxWeight: 0   },
+  { id: 70, name: 'Battle Ropes',          category: 'Cardio',    type: 'time', minReps: 0,  maxReps: 0,  minTime: 1,  maxTime: 10, minWeight: 0,   maxWeight: 0   },
+
+  // ── Full Body (10) ──
+  { id: 71, name: 'Clean & Press',         category: 'Full Body', type: 'reps', minReps: 5,  maxReps: 12, minTime: 0,  maxTime: 0,  minWeight: 20,  maxWeight: 70  },
+  { id: 72, name: 'Kettlebell Swing',      category: 'Full Body', type: 'reps', minReps: 10, maxReps: 30, minTime: 0,  maxTime: 0,  minWeight: 8,   maxWeight: 32  },
+  { id: 73, name: 'Thrusters',             category: 'Full Body', type: 'reps', minReps: 8,  maxReps: 20, minTime: 0,  maxTime: 0,  minWeight: 10,  maxWeight: 50  },
+  { id: 74, name: 'Turkish Get-Up',        category: 'Full Body', type: 'reps', minReps: 3,  maxReps: 8,  minTime: 0,  maxTime: 0,  minWeight: 8,   maxWeight: 24  },
+  { id: 75, name: 'Bear Crawl',            category: 'Full Body', type: 'time', minReps: 0,  maxReps: 0,  minTime: 1,  maxTime: 5,  minWeight: 0,   maxWeight: 0   },
+  { id: 76, name: 'Man Makers',            category: 'Full Body', type: 'reps', minReps: 5,  maxReps: 15, minTime: 0,  maxTime: 0,  minWeight: 5,   maxWeight: 20  },
+  { id: 77, name: 'Box Jumps',             category: 'Full Body', type: 'reps', minReps: 8,  maxReps: 20, minTime: 0,  maxTime: 0,  minWeight: 0,   maxWeight: 0   },
+  { id: 78, name: 'Sled Push',             category: 'Full Body', type: 'time', minReps: 0,  maxReps: 0,  minTime: 1,  maxTime: 5,  minWeight: 20,  maxWeight: 100 },
+  { id: 79, name: 'Farmer\'s Walk',        category: 'Full Body', type: 'time', minReps: 0,  maxReps: 0,  minTime: 1,  maxTime: 5,  minWeight: 15,  maxWeight: 50  },
+  { id: 80, name: 'Medicine Ball Slam',    category: 'Full Body', type: 'reps', minReps: 10, maxReps: 25, minTime: 0,  maxTime: 0,  minWeight: 3,   maxWeight: 15  },
 ];
 
 const INITIAL_PROGRAMS: MgmtProgram[] = [
@@ -280,7 +367,7 @@ const ToastContainer = ({ toasts, onRemove }: { toasts: ToastMsg[]; onRemove: (i
   </div>
 );
 
-// ─── Program Card (Poster Style) ─────────────────────────────────────────────
+// ─── Program Card (Members Style) ─────────────────────────────────────────────
 const ProgramCard = ({
   program, selected, onSelect, onView, onEdit, onDelete, onDuplicate, onAssign
 }: {
@@ -293,196 +380,45 @@ const ProgramCard = ({
   onDuplicate: () => void;
   onAssign: () => void;
 }) => {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const totalExercises = program.routines.reduce((s, r) => s + r.exerciseCount, 0);
-
   return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.94 }}
-      transition={{ duration: 0.25 }}
-      className={cn(
-        "rounded-2xl overflow-hidden flex flex-col border transition-all duration-300 group",
-        "hover:-translate-y-1",
-        goalGlow[program.goal],
-        selected
-          ? "border-white/40 scale-[1.01]"
-          : "border-white/10 hover:border-white/25",
-        program.isTrending && "ring-1 ring-gym-rose/40",
-        program.isPopular && "ring-1 ring-gym-amber/40"
-      )}
-    >
-      {/* ── Gradient Hero Header ── */}
-      <div
-        className="relative px-5 pt-5 pb-6 overflow-hidden"
-        style={{ background: goalGradient[program.goal] }}
-      >
-        {/* Watermark icon */}
-        <div className="absolute -right-4 -bottom-4 opacity-[0.12] pointer-events-none select-none text-white">
-          {goalWatermarkIcon[program.goal]}
+    <GlassCard className="flex flex-col gap-2 !p-3 cursor-pointer" onClick={onView}>
+      <div className="flex items-center gap-2">
+        <div className="w-10 h-10 rounded-xl overflow-hidden border border-white/10 shrink-0">
+          <img src={`https://picsum.photos/seed/prog${program.id}/200/200`} alt={program.name} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
         </div>
-
-        {/* Noise texture overlay */}
-        <div className="absolute inset-0 opacity-[0.04]"
-          style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 256 256\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'n\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.9\' numOctaves=\'4\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23n)\'/%3E%3C/svg%3E")' }}
-        />
-
-        {/* Top row: select + status + trending */}
-        <div className="relative flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onSelect}
-              className="w-5 h-5 rounded border-2 border-white/50 flex items-center justify-center transition-all hover:border-white bg-white/10 hover:bg-white/20"
-            >
-              {selected && <Check size={11} className="text-white" />}
-            </button>
-            {/* Level stripe pill */}
-            <span className={cn(
-              "text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full text-white",
-              levelStripe[program.level]
-            )}>
-              {program.level}
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            {program.isTrending && (
-              <span className="flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/20 text-white backdrop-blur-sm">
-                <Flame size={8} /> Hot
-              </span>
-            )}
-            {program.isPopular && (
-              <span className="flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/20 text-white backdrop-blur-sm">
-                <Star size={8} /> #1
-              </span>
-            )}
-            <span className={cn(
-              "flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full",
-              program.status === 'Active'
-                ? 'bg-white/20 text-white backdrop-blur-sm'
-                : 'bg-black/30 text-white/60'
-            )}>
-              <span className={cn("w-1.5 h-1.5 rounded-full", program.status === 'Active' ? 'bg-green-300' : 'bg-slate-400')} />
-              {program.status}
-            </span>
-          </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-xs font-bold text-white truncate">{program.name}</h3>
+          <p className="text-[9px] text-slate-400 truncate">{program.goal} · {program.duration} · {program.trainer}</p>
         </div>
-
-        {/* Program name */}
-        <div className="relative">
-          <h3 className="text-xl font-black text-white leading-tight tracking-tight drop-shadow-sm">
-            {program.name}
-          </h3>
-          <p className="text-white/70 text-xs mt-1 line-clamp-1">{program.description}</p>
-        </div>
+        <span className={cn(
+          "text-[7px] font-bold uppercase px-1.5 py-0.5 rounded border shrink-0",
+          program.status === 'Active' ? "text-gym-accent bg-gym-accent/10 border-gym-accent/20" :
+          "text-gym-rose bg-gym-rose/10 border-gym-rose/20"
+        )}>
+          {program.status}
+        </span>
       </div>
-
-      {/* ── Dark Info Panel ── */}
-      <div className="bg-[#111827] flex flex-col gap-0 flex-1">
-
-        {/* Stats row */}
-        <div className="grid grid-cols-3 divide-x divide-white/5 border-b border-white/5">
-          {[
-            { val: program.duration, lbl: 'Duration', icon: <Clock size={11} /> },
-            { val: program.routines.length, lbl: 'Routines', icon: <LayoutGrid size={11} /> },
-            { val: totalExercises, lbl: 'Exercises', icon: <Dumbbell size={11} /> },
-          ].map(({ val, lbl, icon }) => (
-            <div key={lbl} className="py-3 px-3 flex flex-col items-center gap-0.5">
-              <span className="text-slate-500 flex items-center gap-1 text-[9px] uppercase tracking-widest">
-                {icon} {lbl}
-              </span>
-              <span className="text-base font-black text-white">{val}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Trainer + enrolled */}
-        <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/5">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-gym-accent/30 to-gym-secondary/30 flex items-center justify-center text-[9px] font-bold text-white">
-              {program.trainer.split(' ').map(n => n[0]).join('')}
-            </div>
-            <span className="text-xs text-slate-300 font-medium">{program.trainer}</span>
-          </div>
-          <div className="flex items-center gap-1 text-xs text-slate-400">
-            <Users size={11} className="text-gym-amber" />
-            <span className="font-semibold text-white">{program.enrolledClients}</span>
-            <span className="text-slate-500">clients</span>
-          </div>
-        </div>
-
-        {/* Completion bar */}
-        <div className="px-4 py-3">
-          <div className="flex justify-between items-center mb-1.5">
-            <span className="text-[9px] text-slate-500 uppercase tracking-widest font-semibold">Completion</span>
-            <span className="text-xs font-black text-white">{program.completionRate}%</span>
-          </div>
-          <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-            <motion.div
-              initial={{ width: 0 }}
-              animate={{ width: `${program.completionRate}%` }}
-              transition={{ duration: 0.9, ease: 'easeOut' }}
-              className="h-full rounded-full"
-              style={{ background: goalGradient[program.goal] }}
-            />
-          </div>
-        </div>
-
-        {/* Action buttons row */}
-        <div className="flex items-center justify-between px-3 pb-3 pt-1 gap-1">
-          {/* Quick actions */}
-          <div className="flex gap-1">
-            {[
-              { Icon: Eye, fn: onView, tip: 'View' },
-              { Icon: Edit3, fn: onEdit, tip: 'Edit' },
-              { Icon: Copy, fn: onDuplicate, tip: 'Duplicate' },
-              { Icon: UserPlus, fn: onAssign, tip: 'Assign' },
-            ].map(({ Icon, fn, tip }) => (
-              <button
-                key={tip}
-                onClick={fn}
-                title={tip}
-                className="w-7 h-7 rounded-lg bg-white/5 border border-white/5 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 hover:border-white/15 transition-all"
-              >
-                <Icon size={13} />
-              </button>
-            ))}
-          </div>
-
-          {/* More menu */}
-          <div className="relative">
-            <button
-              onClick={() => setMenuOpen(p => !p)}
-              className="w-7 h-7 rounded-lg bg-white/5 border border-white/5 flex items-center justify-center text-slate-400 hover:text-gym-rose hover:bg-gym-rose/10 hover:border-gym-rose/20 transition-all"
-              title="More options"
-            >
-              <MoreVertical size={13} />
-            </button>
-            <AnimatePresence>
-              {menuOpen && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.9, y: 4 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.9, y: 4 }}
-                    className="absolute right-0 bottom-9 z-20 bg-[#1a2437] border border-white/10 rounded-xl shadow-2xl py-1 min-w-[150px] overflow-hidden"
-                  >
-                    <button
-                      onClick={() => { onDelete(); setMenuOpen(false); }}
-                      className="flex items-center gap-2.5 w-full px-3 py-2 text-sm text-gym-rose hover:bg-gym-rose/10 transition-colors"
-                    >
-                      <Trash2 size={13} /> Delete Program
-                    </button>
-                  </motion.div>
-                </>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
+      <div className="flex gap-1.5">
+        <button
+          onClick={(e) => { e.stopPropagation(); onView(); }}
+          className="flex-1 py-1.5 bg-gym-accent/10 hover:bg-gym-accent/20 text-gym-accent text-[10px] font-bold rounded-lg transition-all"
+        >
+          Manage Program
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onEdit(); }}
+          className="py-1.5 px-2.5 bg-gym-secondary/10 hover:bg-gym-secondary/20 text-gym-secondary text-[10px] font-bold rounded-lg transition-all flex items-center"
+        >
+          <Edit3 size={10} />
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          className="py-1.5 px-2.5 bg-gym-rose/10 hover:bg-gym-rose/20 text-gym-rose text-[10px] font-bold rounded-lg transition-all flex items-center"
+        >
+          <Trash2 size={10} />
+        </button>
       </div>
-    </motion.div>
+    </GlassCard>
   );
 };
 
@@ -750,7 +686,7 @@ const ViewDetailsPanel = ({ program, onClose, onEdit }: {
     <motion.div
       initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
       transition={{ type: 'spring', damping: 28, stiffness: 240 }}
-      className="relative z-10 glass-card w-full max-w-md h-full overflow-y-auto flex flex-col gap-5"
+      className="relative z-10 glass-card w-full max-w-[50vw] h-full overflow-y-auto flex flex-col gap-5"
     >
       <div className="flex items-start justify-between">
         <div>
@@ -1515,6 +1451,8 @@ const RoutinesListScreen: React.FC = () => {
   const [createOpen, setCreateOpen] = useState(false);
   const [editItem, setEditItem] = useState<RoutineItem | null>(null);
   const [deleteItem, setDeleteItem] = useState<RoutineItem | null>(null);
+  const [exPage, setExPage] = useState(1);
+  const EX_PER_PAGE = 7;
   const [toasts, setToasts] = useState<ToastMsg[]>([]);
   const nextId = useRef(INITIAL_ROUTINES.length + 1);
 
@@ -1524,12 +1462,17 @@ const RoutinesListScreen: React.FC = () => {
     setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 3000);
   };
 
-  const filtered = useMemo(() => routines.filter(r => {
-    if (search && !r.name.toLowerCase().includes(search.toLowerCase())) return false;
-    if (filterType !== 'All' && r.type !== filterType) return false;
-    if (filterCat !== 'All' && r.category !== filterCat) return false;
-    return true;
-  }), [routines, search, filterType, filterCat]);
+  const filtered = useMemo(() => {
+    setExPage(1);
+    return routines.filter(r => {
+      if (search && !r.name.toLowerCase().includes(search.toLowerCase())) return false;
+      if (filterType !== 'All' && r.type !== filterType) return false;
+      if (filterCat !== 'All' && r.category !== filterCat) return false;
+      return true;
+    });
+  }, [routines, search, filterType, filterCat]);
+  const totalExPages = Math.ceil(filtered.length / EX_PER_PAGE);
+  const paginatedExercises = filtered.slice((exPage - 1) * EX_PER_PAGE, exPage * EX_PER_PAGE);
 
   const stats = useMemo(() => ({
     total: routines.length,
@@ -1574,24 +1517,23 @@ const RoutinesListScreen: React.FC = () => {
     item.type === 'reps' ? getRepsHint(item.maxReps) : getTimeHint(item.maxTime);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-2">
       {/* Stats Strip */}
-      <div className="relative overflow-hidden rounded-2xl border border-white/8">
+      <div className="relative overflow-hidden rounded-xl border border-white/8">
         <div className="absolute inset-0 bg-gradient-to-r from-gym-secondary/8 via-gym-accent/5 to-gym-amber/8 pointer-events-none" />
-        <div className="relative grid grid-cols-2 lg:grid-cols-4 divide-y divide-x divide-white/5 lg:divide-y-0">
+        <div className="relative grid grid-cols-4 divide-x divide-white/5">
           {[
-            { num: stats.total, label: 'Total Exercises', sub: 'All exercise types',    Icon: Dumbbell,  color: 'text-gym-accent'    },
-            { num: stats.reps,  label: 'Reps Exercises',  sub: 'With weight ranges',    Icon: BarChart2, color: 'text-gym-secondary' },
-            { num: stats.time,  label: 'Time Exercises',  sub: 'Duration-based',        Icon: Clock,     color: 'text-gym-amber'     },
-            { num: stats.cats,  label: 'Categories',      sub: 'Muscle groups covered', Icon: Activity,  color: 'text-gym-rose'      },
-          ].map(({ num, label, sub, Icon, color }) => (
-            <div key={label} className="px-6 py-5 flex flex-col gap-1 bg-white/[0.02]">
-              <div className="flex items-center gap-2 mb-1">
-                <Icon size={13} className={color} />
-                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{label}</span>
+            { num: stats.total, label: 'Total Exercises', Icon: Dumbbell,  color: 'text-gym-accent'    },
+            { num: stats.reps,  label: 'Reps Exercises',  Icon: BarChart2, color: 'text-gym-secondary' },
+            { num: stats.time,  label: 'Time Exercises',  Icon: Clock,     color: 'text-gym-amber'     },
+            { num: stats.cats,  label: 'Categories',      Icon: Activity,  color: 'text-gym-rose'      },
+          ].map(({ num, label, Icon, color }) => (
+            <div key={label} className="px-3 py-1.5 flex items-center gap-3 bg-white/[0.02]">
+              <Icon size={14} className={color} />
+              <div>
+                <p className={cn('text-lg font-black tracking-tight leading-none', color)}>{num}</p>
+                <span className="text-[8px] font-bold uppercase tracking-widest text-slate-500">{label}</span>
               </div>
-              <p className={cn('text-4xl font-black tracking-tight', color)}>{num}</p>
-              <p className="text-[10px] text-slate-600">{sub}</p>
             </div>
           ))}
         </div>
@@ -1656,12 +1598,12 @@ const RoutinesListScreen: React.FC = () => {
       </AnimatePresence>
 
       {/* Results count + select-all */}
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-slate-600 font-medium">
-          <span className="text-slate-300 font-bold">{filtered.length}</span> exercise{filtered.length !== 1 ? 's' : ''} found
+      <div className="flex items-center justify-between -mb-1">
+        <p className="text-[10px] text-slate-600 font-medium">
+          <span className="text-slate-300 font-bold">{filtered.length}</span> exercises found
         </p>
         {filtered.length > 0 && (
-          <button onClick={toggleAll} className="text-xs text-slate-600 hover:text-gym-accent transition-colors font-medium">
+          <button onClick={toggleAll} className="text-[10px] text-slate-600 hover:text-gym-accent transition-colors font-medium">
             {selectedIds.size === filtered.length ? 'Deselect all' : 'Select all'}
           </button>
         )}
@@ -1672,14 +1614,14 @@ const RoutinesListScreen: React.FC = () => {
         <table className="w-full min-w-[820px]">
           <thead>
             <tr className="border-b border-white/5">
-              <th className="py-3 px-4 text-left">
+              <th className="py-2 px-3 text-left">
                 <button onClick={toggleAll} className="text-slate-500 hover:text-gym-accent transition-colors">
                   {selectedIds.size === filtered.length && filtered.length > 0
-                    ? <CheckSquare size={16} className="text-gym-accent" /> : <Square size={16} />}
+                    ? <CheckSquare size={14} className="text-gym-accent" /> : <Square size={14} />}
                 </button>
               </th>
               {['Exercise', 'Category', 'Type', 'Range', 'Intensity', 'Weight Range', ''].map(h => (
-                <th key={h} className="py-3 px-4 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">{h}</th>
+                <th key={h} className="py-2 px-3 text-left text-[9px] font-bold uppercase tracking-widest text-slate-500">{h}</th>
               ))}
             </tr>
           </thead>
@@ -1691,7 +1633,7 @@ const RoutinesListScreen: React.FC = () => {
                   No exercises found.
                 </td>
               </tr>
-            ) : filtered.map(item => {
+            ) : paginatedExercises.map(item => {
               const hint = getHint(item);
               return (
                 <tr key={item.id}
@@ -1700,79 +1642,73 @@ const RoutinesListScreen: React.FC = () => {
                     selectedIds.has(item.id) && 'bg-gym-secondary/5'
                   )}>
                   {/* Select */}
-                  <td className="py-3 px-4">
+                  <td className="py-1.5 px-3">
                     <button onClick={() => toggle(item.id)} className="text-slate-500 hover:text-gym-accent transition-colors">
                       {selectedIds.has(item.id) ? <CheckSquare size={16} className="text-gym-accent" /> : <Square size={16} />}
                     </button>
                   </td>
                   {/* Name */}
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2.5">
+                  <td className="py-1.5 px-3">
+                    <div className="flex items-center gap-2">
                       <div className={cn(
-                        'w-7 h-7 rounded-lg flex items-center justify-center shrink-0',
+                        'w-6 h-6 rounded-md flex items-center justify-center shrink-0',
                         item.type === 'reps' ? 'bg-gym-secondary/10 text-gym-secondary' : 'bg-gym-amber/10 text-gym-amber'
                       )}>
-                        {item.type === 'reps' ? <Dumbbell size={13} /> : <Clock size={13} />}
+                        {item.type === 'reps' ? <Dumbbell size={11} /> : <Clock size={11} />}
                       </div>
-                      <span className="font-semibold text-white text-sm">{item.name}</span>
+                      <span className="font-semibold text-white text-xs">{item.name}</span>
                     </div>
                   </td>
                   {/* Category */}
-                  <td className="py-3 px-4">
-                    <span className="text-xs px-2 py-0.5 rounded-md bg-white/5 border border-white/8 text-slate-300 font-medium">
+                  <td className="py-1.5 px-3">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-white/5 border border-white/8 text-slate-300 font-medium">
                       {item.category}
                     </span>
                   </td>
                   {/* Type */}
-                  <td className="py-3 px-4">
+                  <td className="py-1.5 px-3">
                     <span className={cn(
-                      'text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-md border flex items-center gap-1 w-fit',
+                      'text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-md border flex items-center gap-1 w-fit',
                       item.type === 'reps'
                         ? 'text-gym-secondary bg-gym-secondary/10 border-gym-secondary/20'
                         : 'text-gym-amber bg-gym-amber/10 border-gym-amber/20'
                     )}>
-                      {item.type === 'reps' ? <><Dumbbell size={9} /> Reps</> : <><Clock size={9} /> Time</>}
+                      {item.type === 'reps' ? <><Dumbbell size={8} /> Reps</> : <><Clock size={8} /> Time</>}
                     </span>
                   </td>
                   {/* Range */}
-                  <td className="py-3 px-4">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-sm font-bold text-white">
-                        {item.type === 'reps' ? `${item.minReps} – ${item.maxReps}` : `${item.minTime} – ${item.maxTime}`}
-                      </span>
-                      <span className="text-[10px] text-slate-500">
-                        {item.type === 'reps' ? 'reps' : 'min'}
-                      </span>
-                    </div>
+                  <td className="py-1.5 px-3">
+                    <span className="text-xs font-bold text-white">
+                      {item.type === 'reps' ? `${item.minReps}–${item.maxReps}` : `${item.minTime}–${item.maxTime}`}
+                    </span>
+                    <span className="text-[9px] text-slate-500 ml-1">{item.type === 'reps' ? 'reps' : 'min'}</span>
                   </td>
                   {/* Intensity hint */}
-                  <td className="py-3 px-4">
-                    <span className={cn('text-[10px] font-bold px-2 py-1 rounded border whitespace-nowrap', hintColor[hint])}>
+                  <td className="py-1.5 px-3">
+                    <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded border whitespace-nowrap', hintColor[hint])}>
                       {hint}
                     </span>
                   </td>
                   {/* Weight Range */}
-                  <td className="py-3 px-4">
+                  <td className="py-1.5 px-3">
                     {item.type === 'reps' ? (
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-sm font-bold text-white">{item.minWeight} – {item.maxWeight}</span>
-                        <div className="flex items-center gap-1">
-                          <span className="text-[10px] text-slate-500">kg</span>
-                          <span className={cn('text-[9px] font-bold px-1 py-0.5 rounded border', hintColor[getWeightHint(item.maxWeight)])}>
-                            {getWeightHint(item.maxWeight)}
-                          </span>
-                        </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs font-bold text-white">{item.minWeight}–{item.maxWeight}</span>
+                        <span className="text-[9px] text-slate-500">kg</span>
+                        <span className={cn('text-[8px] font-bold px-1 py-0.5 rounded border', hintColor[getWeightHint(item.maxWeight)])}>
+                          {getWeightHint(item.maxWeight)}
+                        </span>
                       </div>
                     ) : (
                       <span className="text-slate-600 text-xs">—</span>
                     )}
                   </td>
                   {/* Actions */}
-                  <td className="py-3 px-3">
-                    <div className="flex items-center gap-1.5">
+                  <td className="py-1.5 px-2">
+                    <div className="flex items-center gap-1">
                       <button onClick={() => setEditItem(item)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gym-accent/10 border border-gym-accent/20 text-gym-accent text-xs font-bold hover:bg-gym-accent/20 hover:border-gym-accent/40 active:scale-95 transition-all whitespace-nowrap">
-                        <Edit3 size={12} strokeWidth={2.5} /> Edit
+                        className="flex items-center gap-1 px-2 py-1 rounded-md bg-gym-accent/10 border border-gym-accent/20 text-gym-accent text-[10px] font-bold hover:bg-gym-accent/20 hover:border-gym-accent/40 active:scale-95 transition-all whitespace-nowrap">
+                        <Edit3 size={10} strokeWidth={2.5} /> Edit
                       </button>
                       <button onClick={() => setDeleteItem(item)} title="Delete"
                         className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-600 hover:text-gym-rose hover:bg-gym-rose/10 transition-all">
@@ -1786,6 +1722,36 @@ const RoutinesListScreen: React.FC = () => {
           </tbody>
         </table>
       </GlassCard>
+
+      {/* Pagination */}
+      {totalExPages > 1 && (
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-slate-500">
+            Showing {(exPage - 1) * EX_PER_PAGE + 1}–{Math.min(exPage * EX_PER_PAGE, filtered.length)} of {filtered.length}
+          </span>
+          <div className="flex items-center gap-1">
+            <button onClick={() => setExPage(1)} disabled={exPage === 1}
+              className="px-2 py-1 rounded-md text-[10px] font-bold text-slate-400 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none transition-all">First</button>
+            <button onClick={() => setExPage(p => Math.max(1, p - 1))} disabled={exPage === 1}
+              className="px-2 py-1 rounded-md text-[10px] font-bold text-slate-400 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none transition-all">
+              <ChevronLeft size={12} />
+            </button>
+            {Array.from({ length: totalExPages }, (_, i) => i + 1).map(p => (
+              <button key={p} onClick={() => setExPage(p)}
+                className={cn("w-7 h-7 rounded-md text-xs font-bold transition-all",
+                  p === exPage ? 'bg-gym-accent/20 text-gym-accent border border-gym-accent/30' : 'text-slate-400 hover:text-white hover:bg-white/10')}>
+                {p}
+              </button>
+            ))}
+            <button onClick={() => setExPage(p => Math.min(totalExPages, p + 1))} disabled={exPage === totalExPages}
+              className="px-2 py-1 rounded-md text-[10px] font-bold text-slate-400 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none transition-all">
+              <ChevronRight size={12} />
+            </button>
+            <button onClick={() => setExPage(totalExPages)} disabled={exPage === totalExPages}
+              className="px-2 py-1 rounded-md text-[10px] font-bold text-slate-400 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:pointer-events-none transition-all">Last</button>
+          </div>
+        </div>
+      )}
 
       {/* Modals */}
       <AnimatePresence>
@@ -1835,7 +1801,7 @@ const RoutinesListScreen: React.FC = () => {
 };
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export const WorkoutProgramsManagement: React.FC = () => {
+export const WorkoutProgramsManagement: React.FC<{ onNavigateToMembers?: () => void; onNavigateToNutrition?: () => void }> = ({ onNavigateToMembers, onNavigateToNutrition }) => {
   const [programs, setPrograms] = useState<MgmtProgram[]>(INITIAL_PROGRAMS);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterLevel, setFilterLevel] = useState<Level | 'All'>('All');
@@ -1958,7 +1924,7 @@ export const WorkoutProgramsManagement: React.FC = () => {
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -20 }}
-      className="flex flex-col gap-6"
+      className="flex flex-col gap-2"
     >
       {/* ── Tab Switcher ─────────────────────────────────────── */}
       <div className="flex gap-1 p-1 bg-white/[0.03] border border-white/8 rounded-2xl w-fit">
@@ -1991,13 +1957,12 @@ export const WorkoutProgramsManagement: React.FC = () => {
             { num: stats.enrolled,           label: 'Enrolled Clients', sub: '+12% growth',           Icon: Users,      color: 'text-gym-amber'     },
             { num: `${stats.avgCompletion}%`,label: 'Avg Completion',   sub: 'Across all programs',   Icon: BarChart2,  color: 'text-gym-accent'    },
           ].map(({ num, label, sub, Icon, color }) => (
-            <div key={label} className="px-6 py-5 flex flex-col gap-1 bg-white/[0.02]">
-              <div className="flex items-center gap-2 mb-1">
-                <Icon size={13} className={color} />
-                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{label}</span>
+            <div key={label} className="px-3 py-1.5 flex flex-col bg-white/[0.02]">
+              <div className="flex items-center gap-1.5">
+                <Icon size={11} className={color} />
+                <span className="text-[8px] font-bold uppercase tracking-widest text-slate-500">{label}</span>
               </div>
-              <p className={cn("text-4xl font-black tracking-tight", color)}>{num}</p>
-              <p className="text-[10px] text-slate-600">{sub}</p>
+              <p className={cn("text-xl font-black tracking-tight", color)}>{num}</p>
             </div>
           ))}
         </div>
@@ -2068,6 +2033,36 @@ export const WorkoutProgramsManagement: React.FC = () => {
               <List size={14} />
             </button>
           </div>
+
+          {/* Members button */}
+          {onNavigateToMembers && (
+            <>
+              <div className="w-px h-6 bg-white/8 shrink-0" />
+              <button
+                onClick={onNavigateToMembers}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border border-gym-amber/30 bg-gym-amber/10 text-gym-amber hover:bg-gym-amber/20 transition-all whitespace-nowrap shrink-0"
+              >
+                <Users size={14} />
+                Members
+                <ChevronRight size={13} />
+              </button>
+            </>
+          )}
+
+          {/* Nutrition button */}
+          {onNavigateToNutrition && (
+            <>
+              <div className="w-px h-6 bg-white/8 shrink-0" />
+              <button
+                onClick={onNavigateToNutrition}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border border-gym-accent/30 bg-gym-accent/10 text-gym-accent hover:bg-gym-accent/20 transition-all whitespace-nowrap shrink-0"
+              >
+                <Apple size={14} />
+                Nutrition
+                <ChevronRight size={13} />
+              </button>
+            </>
+          )}
 
           {/* Create button */}
           <button
@@ -2180,7 +2175,7 @@ export const WorkoutProgramsManagement: React.FC = () => {
               </button>
             </motion.div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
               {filtered.map(p => (
                 <React.Fragment key={p.id}>
                   <ProgramCard

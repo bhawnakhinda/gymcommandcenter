@@ -5,10 +5,11 @@ import {
   Users, Activity, ChevronDown, ChevronRight, X, Check, AlertTriangle,
   Clock, Flame, Award, Star, Filter, Sun, Moon, Apple, Leaf,
   Droplets, Wheat, BarChart3, Sparkles, Dumbbell, MoreVertical, Zap,
-  Database, Scale, ArrowUpDown, Pencil, Save, Calculator, MinusCircle, Maximize2, Minimize2
+  Database, Scale, ArrowUpDown, Pencil, Save, Calculator, MinusCircle, Maximize2, Minimize2, Table2
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { GlassCard } from '@/src/components/DashboardElements';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 type NutritionGoal = 'Weight Loss' | 'Muscle Gain' | 'Cardio' | 'Strength' | 'Detox' | 'Wellness';
@@ -54,7 +55,7 @@ interface NutritionPlan {
 interface ToastMsg { id: number; message: string; type: 'success' | 'error'; }
 
 // ─── Constants ─────────────────────────────────────────────────────────────
-const MOCK_CLIENTS = [
+const CLIENT_DB = [
   'James Wilson', 'Emma Johnson', 'Carlos Rodriguez', 'Priya Patel',
   'Tyler Brooks', 'Nina Chen', 'Omar Hassan', 'Aisha Diallo'
 ];
@@ -139,6 +140,177 @@ interface NutritionInfo {
   category: string;
   extras?: Record<string, number>;
 }
+// ─── Smart Ingredient Conversion Engine ────────────────────────────────────
+// Weight of 1 piece/unit in grams for common ingredients
+const PIECE_TO_GRAMS: Record<string, number> = {
+  'banana': 118, 'apple': 182, 'orange': 131, 'amla': 50, 'guava': 55,
+  'mango': 200, 'papaya': 150, 'watermelon': 280, 'pomegranate': 174,
+  'eggs': 50, 'egg': 50, 'whole egg': 50, 'boiled egg': 50,
+  'chicken breast': 170, 'chicken thigh': 115, 'chicken leg': 130,
+  'beef steak': 200, 'fish fillet': 150, 'salmon fillet': 170, 'tuna steak': 150,
+  'paneer': 40, 'tofu': 125, 'avocado': 150, 'potato': 150, 'sweet potato': 130,
+  'tomato': 125, 'onion': 110, 'cucumber': 120, 'carrot': 72,
+  'roti': 30, 'chapati': 30, 'bread': 28, 'idli': 40, 'dosa': 40,
+};
+
+// Cup/tbsp/tsp to grams for common ingredients
+const UNIT_CONVERSIONS: Record<string, Record<string, number>> = {
+  'cup': {
+    'default': 240, 'rice': 185, 'brown rice': 195, 'oats': 80, 'quinoa': 170,
+    'milk': 244, 'curd': 245, 'yogurt': 245, 'greek yogurt': 245, 'dal': 200,
+    'rajma': 180, 'chana': 164, 'moong dal': 200, 'flour': 120, 'sugar': 200,
+    'peanuts': 146, 'almonds': 140, 'walnuts': 120, 'paneer': 150,
+    'spinach': 30, 'broccoli': 91, 'chopped onion': 160,
+    'coconut water': 240, 'almond milk': 240, 'soy milk': 240,
+  },
+  'tbsp': {
+    'default': 15, 'peanut butter': 16, 'ghee': 14, 'olive oil': 14,
+    'coconut oil': 14, 'honey': 21, 'flaxseeds': 7, 'chia seeds': 12,
+    'butter': 14, 'cream': 15, 'sugar': 12.5, 'salt': 18,
+  },
+  'tsp': {
+    'default': 5, 'turmeric': 3, 'cumin': 2, 'cinnamon': 2.6,
+    'black pepper': 2.3, 'salt': 6, 'sugar': 4, 'ghee': 5, 'honey': 7,
+  },
+  'glass': { 'default': 250, 'milk': 250, 'water': 250, 'juice': 250, 'lassi': 250 },
+  'bowl': { 'default': 200, 'dal': 200, 'rice': 200, 'salad': 150, 'soup': 240 },
+  'scoop': { 'default': 30, 'whey protein': 30, 'casein protein': 33, 'mass gainer': 50 },
+  'slice': { 'default': 28, 'bread': 28, 'cheese': 20, 'paneer': 20, 'watermelon': 280 },
+  'handful': { 'default': 30, 'almonds': 28, 'peanuts': 30, 'walnuts': 28, 'cashews': 28, 'raisins': 25 },
+  'plate': { 'default': 200, 'rice': 250, 'salad': 150, 'pasta': 200 },
+};
+
+// Smart parse: "100g paneer" → { qty: multiplier, name: "Paneer", unit: "100g", grams: 100 }
+// "2 eggs" → { qty: 2, name: "Eggs", unit: "pcs" }
+// "1 cup rice" → { qty: 1.85x, name: "Rice", unit: "cup (185g)" }
+interface ParsedIngredient { qty: number; name: string; displayUnit: string; gramsInfo?: string }
+
+function smartParseIngredient(input: string, allDB: Record<string, NutritionInfo>): ParsedIngredient | null {
+  const s = input.trim();
+  if (!s) return null;
+
+  // Regex: optional qty, optional unit, then ingredient name
+  const re = /^(\d+\.?\d*)\s*(g|gm|gms|gram|grams|kg|ml|ltr|litre|liter|cup|cups|tbsp|tsp|glass|bowl|scoop|scoops|slice|slices|handful|plate|pc|pcs|piece|pieces)?\s+(.+)$/i;
+  const m = s.match(re);
+
+  let qtyRaw = 1;
+  let unitRaw = '';
+  let ingName = s;
+
+  if (m) {
+    qtyRaw = parseFloat(m[1]) || 1;
+    unitRaw = (m[2] || '').toLowerCase().replace(/s$/, ''); // normalize plural
+    ingName = m[3].trim();
+  } else {
+    // Try: just "qty ingredient" without unit
+    const m2 = s.match(/^(\d+\.?\d*)\s+(.+)$/);
+    if (m2) {
+      qtyRaw = parseFloat(m2[1]) || 1;
+      ingName = m2[2].trim();
+    }
+  }
+
+  // Normalize unit aliases
+  if (['g', 'gm', 'gram'].includes(unitRaw)) unitRaw = 'gms';
+  if (unitRaw === 'kg') { unitRaw = 'gms'; qtyRaw *= 1000; }
+  if (['ltr', 'litre', 'liter'].includes(unitRaw)) { unitRaw = 'ml'; qtyRaw *= 1000; }
+  if (['pc', 'piece'].includes(unitRaw)) unitRaw = 'pcs';
+  if (unitRaw === 'scoop') unitRaw = 'scoop';
+  if (unitRaw === 'slice') unitRaw = 'slice';
+  if (unitRaw === 'cup') unitRaw = 'cup';
+
+  // Find matching DB entry
+  const ingLower = ingName.toLowerCase();
+  const dbKey = Object.keys(allDB).find(n => n.toLowerCase() === ingLower)
+    || Object.keys(allDB).find(n => n.toLowerCase().includes(ingLower))
+    || Object.keys(allDB).find(n => ingLower.includes(n.toLowerCase()));
+
+  if (!dbKey) return { qty: qtyRaw, name: ingName, displayUnit: unitRaw || 'pcs' };
+
+  const info = allDB[dbKey];
+  const dbUnit = info.unit.toLowerCase(); // e.g. "100g", "1 pc", "1 scoop"
+
+  // Determine base grams from DB unit
+  const dbGrams = (() => {
+    const gm = dbUnit.match(/(\d+\.?\d*)\s*g/);
+    if (gm) return parseFloat(gm[1]);
+    const ml = dbUnit.match(/(\d+\.?\d*)\s*ml/);
+    if (ml) return parseFloat(ml[1]); // treat ml ≈ g for liquids
+    // "1 pc", "1 scoop", etc - look up piece weight
+    return null;
+  })();
+
+  // If user typed grams: convert to DB multiplier
+  if (unitRaw === 'gms' && dbGrams) {
+    const multiplier = qtyRaw / dbGrams;
+    return { qty: +multiplier.toFixed(2), name: dbKey, displayUnit: `${qtyRaw}g`, gramsInfo: `${qtyRaw}g = ${multiplier.toFixed(1)} × ${info.unit}` };
+  }
+  if (unitRaw === 'ml' && dbGrams) {
+    const multiplier = qtyRaw / dbGrams;
+    return { qty: +multiplier.toFixed(2), name: dbKey, displayUnit: `${qtyRaw}ml`, gramsInfo: `${qtyRaw}ml = ${multiplier.toFixed(1)} × ${info.unit}` };
+  }
+
+  // If user typed cup/tbsp/tsp: convert using UNIT_CONVERSIONS
+  if (unitRaw && UNIT_CONVERSIONS[unitRaw]) {
+    const convMap = UNIT_CONVERSIONS[unitRaw];
+    const convGrams = convMap[dbKey.toLowerCase()] || convMap[ingLower] || convMap['default'];
+    const totalGrams = convGrams * qtyRaw;
+    if (dbGrams) {
+      const multiplier = totalGrams / dbGrams;
+      return { qty: +multiplier.toFixed(2), name: dbKey, displayUnit: `${qtyRaw} ${unitRaw}`, gramsInfo: `${qtyRaw} ${unitRaw} = ${Math.round(totalGrams)}g = ${multiplier.toFixed(1)} × ${info.unit}` };
+    }
+    // If DB is per piece, estimate multiplier from piece weight
+    const pieceG = PIECE_TO_GRAMS[dbKey.toLowerCase()] || PIECE_TO_GRAMS[ingLower];
+    if (pieceG) {
+      const multiplier = totalGrams / pieceG;
+      return { qty: +multiplier.toFixed(2), name: dbKey, displayUnit: `${qtyRaw} ${unitRaw}`, gramsInfo: `${qtyRaw} ${unitRaw} = ${Math.round(totalGrams)}g ≈ ${multiplier.toFixed(1)} pcs` };
+    }
+    return { qty: qtyRaw, name: dbKey, displayUnit: `${qtyRaw} ${unitRaw}`, gramsInfo: `${qtyRaw} ${unitRaw} ≈ ${Math.round(totalGrams)}g` };
+  }
+
+  // If user typed "pcs" or no unit & DB is per piece → direct qty multiply
+  if (!unitRaw || unitRaw === 'pcs') {
+    // DB is per piece
+    if (dbUnit.includes('pc') || dbUnit.includes('scoop') || dbUnit.includes('tsp') || dbUnit.includes('slice')) {
+      return { qty: qtyRaw, name: dbKey, displayUnit: `${qtyRaw} ${info.unit.replace(/[\d.]+\s*/, '')}` };
+    }
+    // DB is per 100g, user typed "2 chicken breast" → convert pcs to grams
+    if (dbGrams) {
+      const pieceG = PIECE_TO_GRAMS[dbKey.toLowerCase()] || PIECE_TO_GRAMS[ingLower];
+      if (pieceG) {
+        const totalGrams = pieceG * qtyRaw;
+        const multiplier = totalGrams / dbGrams;
+        return { qty: +multiplier.toFixed(2), name: dbKey, displayUnit: `${qtyRaw} pcs`, gramsInfo: `${qtyRaw} pcs = ${Math.round(totalGrams)}g = ${multiplier.toFixed(1)} × ${info.unit}` };
+      }
+      // No piece weight known - treat qty as direct multiplier
+      return { qty: qtyRaw, name: dbKey, displayUnit: `× ${qtyRaw}` };
+    }
+  }
+
+  return { qty: qtyRaw, name: dbKey, displayUnit: unitRaw || info.unit };
+}
+
+// ─── Smart Suggestion Filters ──────────────────────────────────────────────
+const SMART_FILTERS: Record<string, { label: string; color: string; bg: string; icon: string; match: (name: string, info: NutritionInfo) => boolean }> = {
+  'high-protein': { label: 'High Protein', color: 'text-gym-accent', bg: 'bg-gym-accent/10 border-gym-accent/30', icon: '💪',
+    match: (_, info) => info.protein >= 10 },
+  'weight-loss': { label: 'Weight Loss', color: 'text-gym-rose', bg: 'bg-gym-rose/10 border-gym-rose/30', icon: '🔥',
+    match: (_, info) => info.cal <= 120 && info.fats <= 5 },
+  'muscle-gain': { label: 'Muscle Gain', color: 'text-gym-secondary', bg: 'bg-gym-secondary/10 border-gym-secondary/30', icon: '🏋️',
+    match: (_, info) => info.protein >= 8 && info.cal >= 100 },
+  'keto': { label: 'Keto', color: 'text-gym-amber', bg: 'bg-gym-amber/10 border-gym-amber/30', icon: '🥑',
+    match: (_, info) => info.fats >= 5 && info.carbs <= 10 },
+  'vegan': { label: 'Vegan', color: 'text-emerald-400', bg: 'bg-emerald-400/10 border-emerald-400/30', icon: '🌱',
+    match: (name) => {
+      const nonVegan = ['chicken', 'egg', 'milk', 'whey', 'casein', 'beef', 'fish', 'salmon', 'tuna', 'shrimp', 'curd', 'yogurt', 'greek yogurt', 'paneer', 'cheese', 'butter', 'ghee', 'cream', 'honey'];
+      return !nonVegan.some(nv => name.toLowerCase().includes(nv));
+    }},
+  'low-carb': { label: 'Low Carb', color: 'text-cyan-300', bg: 'bg-cyan-300/10 border-cyan-300/30', icon: '📉',
+    match: (_, info) => info.carbs <= 8 },
+  'high-fiber': { label: 'High Fiber', color: 'text-orange-400', bg: 'bg-orange-400/10 border-orange-400/30', icon: '🌾',
+    match: (_, info) => info.fiber >= 2 },
+};
+
 // cal=kcal, protein/carbs/fats/fiber/sugar=g, sodium/potassium/calcium=mg, iron=mg
 const NUTRITION_DB: Record<string, NutritionInfo> = {
   // ── Proteins ──
@@ -513,9 +685,9 @@ const ToastContainer = ({ toasts, onRemove }: { toasts: ToastMsg[]; onRemove: (i
   </div>
 );
 
-// ─── Plan Card (Poster Style) ──────────────────────────────────────────────
+// ─── Plan Card (Members Style) ──────────────────────────────────────────────
 const NutritionCard = ({
-  plan, onView, onEdit, onDelete, onDuplicate, onAssign
+  plan, onView, onEdit, onDelete, onDuplicate, onAssign, expanded, onToggleExpand
 }: {
   plan: NutritionPlan;
   onView: () => void;
@@ -523,216 +695,48 @@ const NutritionCard = ({
   onDelete: () => void;
   onDuplicate: () => void;
   onAssign: () => void;
+  expanded: boolean;
+  onToggleExpand: () => void;
 }) => {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const totalMeals = plan.meals.morning.length + plan.meals.afternoon.length + plan.meals.evening.length;
-  const allMeals = [...plan.meals.morning, ...plan.meals.afternoon, ...plan.meals.evening];
-  const tp = allMeals.reduce((s, m) => s + m.protein, 0);
-  const tc = allMeals.reduce((s, m) => s + m.carbs, 0);
-  const tf = allMeals.reduce((s, m) => s + m.fats, 0);
-
   return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.94 }}
-      transition={{ duration: 0.25 }}
-      className={cn(
-        "rounded-2xl overflow-hidden flex flex-col border transition-all duration-300 group",
-        "hover:-translate-y-1",
-        goalGlow[plan.goal],
-        "border-white/10 hover:border-white/25"
-      )}
-    >
-      {/* ── Gradient Hero Header ── */}
-      <div
-        className="relative px-5 pt-5 pb-6 overflow-hidden"
-        style={{ background: goalGradient[plan.goal] }}
-      >
-        {/* Watermark icon */}
-        <div className="absolute -right-4 -bottom-4 opacity-[0.12] pointer-events-none select-none text-white">
-          {goalWatermarkIcon[plan.goal]}
+    <GlassCard className="flex flex-col gap-2 !p-3 cursor-pointer" onClick={onView}>
+      <div className="flex items-center gap-2">
+        <div className="w-10 h-10 rounded-xl overflow-hidden border border-white/10 shrink-0">
+          <img src={`https://picsum.photos/seed/nutr${plan.id}/200/200`} alt={plan.name} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
         </div>
-
-        {/* Top row: level + status */}
-        <div className="relative flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <span className={cn(
-              "text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full text-white",
-              levelStripe[plan.level]
-            )}>
-              {plan.level}
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className={cn(
-              "flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full",
-              plan.status === 'Active'
-                ? 'bg-white/20 text-white backdrop-blur-sm'
-                : 'bg-black/30 text-white/60'
-            )}>
-              <span className={cn("w-1.5 h-1.5 rounded-full", plan.status === 'Active' ? 'bg-green-300' : 'bg-slate-400')} />
-              {plan.status}
-            </span>
-          </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-xs font-bold text-white truncate">{plan.name}</h3>
+          <p className="text-[9px] text-slate-400 truncate">{plan.goal} · {plan.totalCal} cal · {plan.duration}</p>
         </div>
-
-        {/* Plan name */}
-        <div className="relative">
-          <h3 className="text-xl font-black text-white leading-tight tracking-tight drop-shadow-sm">
-            {plan.name}
-          </h3>
-          <p className="text-white/70 text-xs mt-1 line-clamp-1">{plan.description}</p>
-        </div>
+        <span className={cn(
+          "text-[7px] font-bold uppercase px-1.5 py-0.5 rounded border shrink-0",
+          plan.status === 'Active' ? "text-gym-accent bg-gym-accent/10 border-gym-accent/20" :
+          "text-gym-rose bg-gym-rose/10 border-gym-rose/20"
+        )}>
+          {plan.status}
+        </span>
       </div>
-
-      {/* ── Dark Info Panel ── */}
-      <div className="bg-[#111827] flex flex-col gap-0 flex-1">
-        {/* Stats row */}
-        <div className="grid grid-cols-3 divide-x divide-white/5 border-b border-white/5">
-          {[
-            { val: `${plan.totalCal}`, lbl: 'Cal/Day', icon: <Flame size={11} /> },
-            { val: totalMeals, lbl: 'Meals', icon: <Apple size={11} /> },
-            { val: plan.ingredients.length, lbl: 'Ingredients', icon: <Leaf size={11} /> },
-          ].map(({ val, lbl, icon }) => (
-            <div key={lbl} className="py-3 px-3 flex flex-col items-center gap-0.5">
-              <span className="text-slate-500 flex items-center gap-1 text-[9px] uppercase tracking-widest">
-                {icon} {lbl}
-              </span>
-              <span className="text-base font-black text-white">{val}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Duration + enrolled */}
-        <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/5">
-          <div className="flex items-center gap-2">
-            <Clock size={12} className="text-gym-accent" />
-            <span className="text-xs text-slate-300 font-medium">{plan.duration}</span>
-          </div>
-          <div className="flex items-center gap-1 text-xs text-slate-400">
-            <Users size={11} className="text-gym-amber" />
-            <span className="font-semibold text-white">{plan.assignedClients}</span>
-            <span className="text-slate-500">clients</span>
-          </div>
-        </div>
-
-        {/* Macro bar */}
-        <div className="px-4 py-3 border-b border-white/5">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1">
-              <span className="text-[9px] text-gym-accent font-bold">{tp}g</span>
-              <span className="text-[8px] text-slate-500">Protein</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="text-[9px] text-gym-amber font-bold">{tc}g</span>
-              <span className="text-[8px] text-slate-500">Carbs</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="text-[9px] text-gym-rose font-bold">{tf}g</span>
-              <span className="text-[8px] text-slate-500">Fats</span>
-            </div>
-          </div>
-          <div className="flex gap-0.5 mt-1.5 h-1.5 rounded-full overflow-hidden bg-white/5">
-            <div className="h-full bg-gym-accent rounded-l-full" style={{ width: `${(tp / (tp + tc + tf)) * 100}%` }} />
-            <div className="h-full bg-gym-amber" style={{ width: `${(tc / (tp + tc + tf)) * 100}%` }} />
-            <div className="h-full bg-gym-rose rounded-r-full" style={{ width: `${(tf / (tp + tc + tf)) * 100}%` }} />
-          </div>
-        </div>
-
-        {/* Meal preview */}
-        <div className="px-4 py-3 flex flex-col gap-1">
-          {[
-            { label: 'Morning', icon: Sun, color: 'text-gym-amber', items: plan.meals.morning },
-            { label: 'Afternoon', icon: Flame, color: 'text-orange-400', items: plan.meals.afternoon },
-            { label: 'Evening', icon: Moon, color: 'text-gym-secondary', items: plan.meals.evening },
-          ].map(section => (
-            <div key={section.label}>
-              <div className="flex items-center gap-1.5 mb-0.5">
-                <section.icon size={9} className={section.color} />
-                <span className={cn("text-[7px] font-bold uppercase tracking-widest", section.color)}>{section.label}</span>
-                <span className="text-[7px] text-slate-600 ml-auto">{section.items.length}</span>
-              </div>
-              {section.items.slice(0, 2).map(meal => (
-                <div key={meal.name} className="flex items-center justify-between py-0.5 px-1.5">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-[8px] text-gym-amber/50 font-semibold shrink-0">{meal.time}</span>
-                    <span className="text-[10px] text-slate-300 truncate">{meal.name}</span>
-                  </div>
-                  <span className="text-[8px] text-slate-600 shrink-0 ml-1">{meal.cal}cal</span>
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-
-        {/* Ingredients list */}
-        <div className="px-4 py-3 border-t border-white/5">
-          <div className="flex items-center gap-1.5 mb-2">
-            <Leaf size={10} className="text-gym-accent" />
-            <span className="text-[8px] font-bold text-gym-accent uppercase tracking-widest">Ingredients</span>
-            <span className="text-[8px] text-slate-600 ml-auto">{plan.ingredients.length} items</span>
-          </div>
-          <div className="flex flex-wrap gap-1">
-            {plan.ingredients.map(ing => (
-              <span key={ing} className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-white/5 border border-white/8 text-slate-400">{ing}</span>
-            ))}
-          </div>
-        </div>
-
-        {/* Action buttons row */}
-        <div className="flex items-center justify-between px-3 pb-3 pt-1 gap-1 mt-auto">
-          <div className="flex gap-1">
-            {[
-              { Icon: Eye, fn: onView, tip: 'View' },
-              { Icon: Edit3, fn: onEdit, tip: 'Edit' },
-              { Icon: Copy, fn: onDuplicate, tip: 'Duplicate' },
-              { Icon: UserPlus, fn: onAssign, tip: 'Assign' },
-            ].map(({ Icon, fn, tip }) => (
-              <button
-                key={tip}
-                onClick={fn}
-                title={tip}
-                className="w-7 h-7 rounded-lg bg-white/5 border border-white/5 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 hover:border-white/15 transition-all"
-              >
-                <Icon size={13} />
-              </button>
-            ))}
-          </div>
-
-          <div className="relative">
-            <button
-              onClick={() => setMenuOpen(p => !p)}
-              className="w-7 h-7 rounded-lg bg-white/5 border border-white/5 flex items-center justify-center text-slate-400 hover:text-gym-rose hover:bg-gym-rose/10 hover:border-gym-rose/20 transition-all"
-              title="More options"
-            >
-              <MoreVertical size={13} />
-            </button>
-            <AnimatePresence>
-              {menuOpen && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.9, y: 4 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.9, y: 4 }}
-                    className="absolute right-0 bottom-9 z-20 bg-[#1a2437] border border-white/10 rounded-xl shadow-2xl py-1 min-w-[150px] overflow-hidden"
-                  >
-                    <button
-                      onClick={() => { onDelete(); setMenuOpen(false); }}
-                      className="flex items-center gap-2.5 w-full px-3 py-2 text-sm text-gym-rose hover:bg-gym-rose/10 transition-colors"
-                    >
-                      <Trash2 size={13} /> Delete Plan
-                    </button>
-                  </motion.div>
-                </>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
+      <div className="flex gap-1.5">
+        <button
+          onClick={(e) => { e.stopPropagation(); onView(); }}
+          className="flex-1 py-1.5 bg-gym-accent/10 hover:bg-gym-accent/20 text-gym-accent text-[10px] font-bold rounded-lg transition-all"
+        >
+          Manage Plan
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onEdit(); }}
+          className="py-1.5 px-2.5 bg-gym-secondary/10 hover:bg-gym-secondary/20 text-gym-secondary text-[10px] font-bold rounded-lg transition-all flex items-center"
+        >
+          <Pencil size={10} />
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          className="py-1.5 px-2.5 bg-gym-rose/10 hover:bg-gym-rose/20 text-gym-rose text-[10px] font-bold rounded-lg transition-all flex items-center"
+        >
+          <Trash2 size={10} />
+        </button>
       </div>
-    </motion.div>
+    </GlassCard>
   );
 };
 
@@ -808,7 +812,7 @@ const AssignModal = ({ plan, onClose, onAssign }: {
           </button>
         </div>
         <div className="flex flex-col gap-2 mb-5 max-h-64 overflow-y-auto pr-1">
-          {MOCK_CLIENTS.map(client => (
+          {CLIENT_DB.map(client => (
             <button
               key={client}
               onClick={() => toggle(client)}
@@ -1060,7 +1064,7 @@ const CreatePlanModal = ({ initial, onClose, onSave }: {
     };
     setMeals(p => ({
       ...p,
-      [session]: [...p[session], { name: '', ...defaults[session], cal: 0, protein: 0, carbs: 0, fats: 0, items: [] }],
+      [session]: [...p[session], { name: '', ...defaults[session], cal: 0, protein: 0, carbs: 0, fats: 0 }],
     }));
   };
 
@@ -1627,65 +1631,18 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingItem, setEditingItem] = useState<string | null>(null);
   const [newIng, setNewIng] = useState<Record<string, any>>({ name: '', unit: '1', cal: 0, protein: 0, carbs: 0, fats: 0, sodium: 0, potassium: 0, fiber: 0, sugar: 0, calcium: 0, iron: 0, category: 'Proteins' });
+  const [showNutrientManager, setShowNutrientManager] = useState(false);
+  const [newNutrient, setNewNutrient] = useState({ name: '', unit: 'mg', color: NUTRIENT_COLORS[0] });
   const [editingNutrient, setEditingNutrient] = useState<string | null>(null);
   const [showNameSuggestions, setShowNameSuggestions] = useState(false);
   const [showCalc, setShowCalc] = useState(false);
-  const [calcItems, setCalcItems] = useState<{ name: string; qty: number }[]>([]);
+  const [isFullscreen, setIsFullscreen] = useState(true);
+  const [calcItems, setCalcItems] = useState<{ name: string; qty: number; displayUnit?: string; gramsInfo?: string }[]>([]);
   const [calcSearch, setCalcSearch] = useState('');
   const [showCalcSuggestions, setShowCalcSuggestions] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(true);
-  const [showDietBuilder, setShowDietBuilder] = useState(false);
-  const [dietItems, setDietItems] = useState<{ name: string; qty: number; session: 'morning' | 'afternoon' | 'evening' }[]>([]);
-  const [dietName, setDietName] = useState('');
-  const [dietSearch, setDietSearch] = useState('');
-  const [showDietSuggestions, setShowDietSuggestions] = useState(false);
-  const [dietSession, setDietSession] = useState<'morning' | 'afternoon' | 'evening'>('morning');
-  const [savedDiets, setSavedDiets] = useState<{ name: string; items: { name: string; qty: number; session: 'morning' | 'afternoon' | 'evening' }[] }[]>([]);
-  const [editingDietIdx, setEditingDietIdx] = useState<number | null>(null);
-  const [showDishBuilder, setShowDishBuilder] = useState(false);
-  const [dishName, setDishName] = useState('');
-  const [dishCategory, setDishCategory] = useState('Breakfast');
-  const [dishGoal, setDishGoal] = useState('Maintenance');
-  const [dishItems, setDishItems] = useState<{ name: string; qty: number }[]>([]);
-  const [dishSearch, setDishSearch] = useState('');
-  const [showDishSuggestions, setShowDishSuggestions] = useState(false);
-  const [dishFilterCat, setDishFilterCat] = useState<string>('All');
-  const [dishFilterGoal, setDishFilterGoal] = useState<string>('All');
-
-  type SavedDish = { name: string; category: string; goal: string; items: { name: string; qty: number }[] };
-  const MEAL_CATEGORIES = ['Breakfast', 'Lunch', 'Dinner', 'Pre-Workout', 'Post-Workout', 'Snack'];
-  const GOAL_TYPES = ['Weight Loss', 'Muscle Gain', 'Maintenance'];
-
-  // Pre-built professional fitness recipes
-  const DEFAULT_DISHES: SavedDish[] = [
-    { name: 'Protein Oatmeal Bowl', category: 'Breakfast', goal: 'Muscle Gain', items: [{ name: 'Oats', qty: 1 }, { name: 'Whey Protein', qty: 1 }, { name: 'Banana', qty: 1 }, { name: 'Almonds', qty: 1 }, { name: 'Honey', qty: 1 }] },
-    { name: 'Egg White Omelette', category: 'Breakfast', goal: 'Weight Loss', items: [{ name: 'Egg Whites', qty: 4 }, { name: 'Spinach', qty: 0.5 }, { name: 'Bell Peppers', qty: 0.5 }, { name: 'Tomato', qty: 0.5 }] },
-    { name: 'Greek Yogurt Parfait', category: 'Breakfast', goal: 'Maintenance', items: [{ name: 'Greek Yogurt', qty: 2 }, { name: 'Blueberries', qty: 1 }, { name: 'Honey', qty: 0.5 }, { name: 'Chia Seeds', qty: 1 }, { name: 'Almonds', qty: 0.5 }] },
-    { name: 'Power Smoothie', category: 'Breakfast', goal: 'Muscle Gain', items: [{ name: 'Banana', qty: 1 }, { name: 'Whey Protein', qty: 1 }, { name: 'Milk', qty: 1 }, { name: 'Peanut Butter', qty: 1 }, { name: 'Oats', qty: 0.5 }] },
-    { name: 'Grilled Chicken Salad', category: 'Lunch', goal: 'Weight Loss', items: [{ name: 'Chicken Breast', qty: 1.5 }, { name: 'Lettuce', qty: 1 }, { name: 'Cucumber', qty: 1 }, { name: 'Tomato', qty: 1 }, { name: 'Olive Oil', qty: 1 }, { name: 'Lemon', qty: 0.5 }] },
-    { name: 'Chicken Rice Bowl', category: 'Lunch', goal: 'Muscle Gain', items: [{ name: 'Chicken Breast', qty: 2 }, { name: 'Brown Rice', qty: 1.5 }, { name: 'Broccoli', qty: 1 }, { name: 'Olive Oil', qty: 1 }] },
-    { name: 'Quinoa Veggie Bowl', category: 'Lunch', goal: 'Maintenance', items: [{ name: 'Quinoa', qty: 1.5 }, { name: 'Spinach', qty: 1 }, { name: 'Avocado', qty: 0.5 }, { name: 'Bell Peppers', qty: 1 }, { name: 'Olive Oil', qty: 1 }, { name: 'Lemon', qty: 0.5 }] },
-    { name: 'Tuna Wrap', category: 'Lunch', goal: 'Weight Loss', items: [{ name: 'Tuna', qty: 1 }, { name: 'Whole Wheat Bread', qty: 2 }, { name: 'Lettuce', qty: 0.5 }, { name: 'Tomato', qty: 0.5 }, { name: 'Cucumber', qty: 0.5 }] },
-    { name: 'Salmon & Sweet Potato', category: 'Dinner', goal: 'Muscle Gain', items: [{ name: 'Salmon', qty: 1.5 }, { name: 'Sweet Potato', qty: 2 }, { name: 'Asparagus', qty: 1 }, { name: 'Olive Oil', qty: 1 }, { name: 'Lemon', qty: 0.5 }] },
-    { name: 'Grilled Fish & Veggies', category: 'Dinner', goal: 'Weight Loss', items: [{ name: 'Cod Fish', qty: 1.5 }, { name: 'Broccoli', qty: 1 }, { name: 'Zucchini', qty: 1 }, { name: 'Olive Oil', qty: 0.5 }, { name: 'Lemon', qty: 0.5 }] },
-    { name: 'Steak & Brown Rice', category: 'Dinner', goal: 'Muscle Gain', items: [{ name: 'Beef Steak', qty: 2 }, { name: 'Brown Rice', qty: 1.5 }, { name: 'Mixed Veggies', qty: 1 }, { name: 'Olive Oil', qty: 1 }] },
-    { name: 'Paneer Tikka Bowl', category: 'Dinner', goal: 'Maintenance', items: [{ name: 'Paneer', qty: 1.5 }, { name: 'Rice', qty: 1 }, { name: 'Bell Peppers', qty: 1 }, { name: 'Tomato', qty: 1 }, { name: 'Olive Oil', qty: 1 }] },
-    { name: 'Pre-Workout Energy Shake', category: 'Pre-Workout', goal: 'Muscle Gain', items: [{ name: 'Banana', qty: 1 }, { name: 'Oats', qty: 0.5 }, { name: 'Honey', qty: 1 }, { name: 'Milk', qty: 1 }, { name: 'Dates', qty: 2 }] },
-    { name: 'Pre-Workout Snack Plate', category: 'Pre-Workout', goal: 'Maintenance', items: [{ name: 'Apple', qty: 1 }, { name: 'Peanut Butter', qty: 1 }, { name: 'Dates', qty: 3 }] },
-    { name: 'Post-Workout Recovery Shake', category: 'Post-Workout', goal: 'Muscle Gain', items: [{ name: 'Whey Protein', qty: 1 }, { name: 'Banana', qty: 1 }, { name: 'Milk', qty: 1 }, { name: 'Peanut Butter', qty: 1 }] },
-    { name: 'Post-Workout Casein Bowl', category: 'Post-Workout', goal: 'Muscle Gain', items: [{ name: 'Casein Protein', qty: 1 }, { name: 'Greek Yogurt', qty: 1 }, { name: 'Blueberries', qty: 0.5 }, { name: 'Almonds', qty: 1 }] },
-    { name: 'Detox Green Smoothie', category: 'Snack', goal: 'Weight Loss', items: [{ name: 'Spinach', qty: 1 }, { name: 'Cucumber', qty: 1 }, { name: 'Apple', qty: 1 }, { name: 'Lemon', qty: 1 }, { name: 'Ginger', qty: 1 }, { name: 'Green Tea', qty: 1 }] },
-    { name: 'Trail Mix Energy Bites', category: 'Snack', goal: 'Maintenance', items: [{ name: 'Trail Mix', qty: 1 }, { name: 'Dates', qty: 2 }, { name: 'Peanut Butter', qty: 1 }, { name: 'Honey', qty: 0.5 }] },
-    { name: 'Cottage Cheese & Fruit', category: 'Snack', goal: 'Weight Loss', items: [{ name: 'Cottage Cheese', qty: 1.5 }, { name: 'Blueberries', qty: 0.5 }, { name: 'Flax Seeds', qty: 1 }] },
-    { name: 'Overnight Oats', category: 'Breakfast', goal: 'Maintenance', items: [{ name: 'Oats', qty: 0.5 }, { name: 'Milk', qty: 0.5 }, { name: 'Chia Seeds', qty: 1 }, { name: 'Honey', qty: 0.5 }, { name: 'Banana', qty: 0.5 }, { name: 'Almonds', qty: 0.5 }] },
-    { name: 'Tofu Stir Fry', category: 'Lunch', goal: 'Weight Loss', items: [{ name: 'Tofu', qty: 2 }, { name: 'Broccoli', qty: 1 }, { name: 'Bell Peppers', qty: 1 }, { name: 'Zucchini', qty: 0.5 }, { name: 'Olive Oil', qty: 1 }, { name: 'Ginger', qty: 1 }] },
-  ];
-
-  const [savedDishes, setSavedDishes] = useState<SavedDish[]>(DEFAULT_DISHES);
-  const [editingDishIdx, setEditingDishIdx] = useState<number | null>(null);
-  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
-  const [showNutrientPopup, setShowNutrientPopup] = useState(false);
-  const [popupNutrient, setPopupNutrient] = useState({ name: '', unit: 'mg', color: NUTRIENT_COLORS[0], maxValue: 1000, step: 5 });
+  const [activeSmartFilter, setActiveSmartFilter] = useState<string | null>(null);
+  const [ingPage, setIngPage] = useState(1);
+  const ING_PER_PAGE = 7;
 
   const allDB = { ...NUTRITION_DB, ...customIngredients };
   const categories = ['All', ...Array.from(new Set(Object.values(allDB).map(v => v.category)))];
@@ -1724,89 +1681,95 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
   const totalItems = Object.keys(allDB).length;
   const totalCustom = Object.keys(customIngredients).length;
 
+  const totalIngPages = Math.ceil(entries.length / ING_PER_PAGE);
+  const pagedEntries = entries.slice((ingPage - 1) * ING_PER_PAGE, ingPage * ING_PER_PAGE);
+  const catCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    Object.values(allDB).forEach(i => { counts[i.category] = (counts[i.category] || 0) + 1; });
+    return counts;
+  }, [allDB]);
+
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-end">
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-      <motion.div
-        initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
-        transition={{ type: 'spring', damping: 28, stiffness: 240 }}
-        className={cn("relative z-10 bg-[#0f1729] w-full h-full flex flex-col border-l border-white/10 shadow-2xl", isFullscreen ? 'max-w-full' : 'max-w-3xl')}
-      >
-        {/* Header */}
-        <div className="relative bg-gradient-to-r from-gym-accent via-emerald-600 to-teal-500 px-6 pt-5 pb-6 shrink-0">
-          <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 30% 50%, white 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
-          <div className="relative flex justify-between items-start">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <Database size={16} className="text-white/80" />
-                <span className="text-white/80 text-xs font-medium tracking-wide uppercase">Nutrition Database</span>
-              </div>
-              <h3 className="text-2xl font-extrabold text-white">Ingredient Master</h3>
-              <p className="text-white/60 text-xs mt-1">{totalItems} ingredients · {totalCustom} custom</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button onClick={() => setIsFullscreen(f => !f)} className="text-white/60 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-1.5 transition-all" title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
-                {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-              </button>
-              <button onClick={onClose} className="text-white/60 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-1.5 transition-all">
-                <X size={16} />
-              </button>
-            </div>
+    <div className="fixed inset-0 z-[150] flex flex-col">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-[#0f1729]" />
+      <div className="relative z-10 flex flex-col h-full">
+
+        {/* Stats Strip — single GlassCard, grid-cols-4, divide-x (like Exercises) */}
+        <div className="shrink-0 px-4 pt-2 pb-1.5">
+          <div className="flex items-center gap-2 mb-2">
+            <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors"><X size={16} /></button>
+            <span className="text-sm font-bold text-white">Ingredient Master</span>
           </div>
+          <GlassCard className="!p-0 grid grid-cols-4 divide-x divide-white/5">
+            {[
+              { icon: <Database size={14} />, val: totalItems, label: 'Total Ingredients', color: 'text-gym-accent' },
+              { icon: <Sparkles size={14} />, val: totalCustom, label: 'Custom', color: 'text-gym-secondary' },
+              { icon: <Filter size={14} />, val: Object.keys(catCounts).length, label: 'Categories', color: 'text-gym-amber' },
+              { icon: <Zap size={14} />, val: 10 + customNutrientTypes.length, label: 'Nutrients', color: 'text-gym-rose' },
+            ].map(s => (
+              <div key={s.label} className="px-4 py-2 flex items-center gap-2">
+                <span className={cn("opacity-60", s.color)}>{s.icon}</span>
+                <div>
+                  <span className={cn("text-lg font-black", s.color)}>{s.val}</span>
+                  <div className="text-[8px] font-bold text-white uppercase">{s.label}</div>
+                </div>
+              </div>
+            ))}
+          </GlassCard>
         </div>
 
-        {/* Toolbar */}
-        <div className="px-5 pt-4 pb-3 flex flex-col gap-3 border-b border-white/5 shrink-0">
-          <div className="flex gap-2">
+        {/* Search + Filter Bar (like Exercises) */}
+        <div className="shrink-0 px-4 py-2">
+          <GlassCard className="!p-2 flex items-center gap-2">
             <div className="relative flex-1">
               <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-              <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+              <input type="text" value={search} onChange={e => { setSearch(e.target.value); setIngPage(1); }}
                 placeholder="Search ingredients..."
-                className="w-full bg-white/5 border border-white/10 rounded-xl pl-9 pr-4 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-gym-accent/50" />
+                className="w-full bg-white/5 border border-white/10 rounded-lg pl-9 pr-4 py-1.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-gym-accent/50" />
             </div>
-            <button onClick={() => { setShowCalc(p => !p); }}
-              className={cn("flex items-center gap-2 px-4 py-2 border rounded-xl font-bold text-xs transition-all",
-                showCalc ? 'bg-gym-amber/10 border-gym-amber/30 text-gym-amber' : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10')}>
-              <Calculator size={14} /> Nutrition Calc {calcItems.length > 0 && <span className="px-1.5 py-0.5 rounded-full bg-gym-amber/20 text-gym-amber text-[8px] font-bold">{calcItems.length}</span>}
-            </button>
-            <button onClick={() => { setShowNutrientPopup(true); setPopupNutrient({ name: '', unit: 'mg', color: NUTRIENT_COLORS[(customNutrientTypes.length) % NUTRIENT_COLORS.length], maxValue: 1000, step: 5 }); setEditingNutrient(null); }}
-              className={cn("flex items-center gap-2 px-4 py-2 border rounded-xl font-bold text-xs transition-all",
-                'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10')}>
-              <Zap size={14} /> Nutrient Types {customNutrientTypes.length > 0 && <span className="px-1.5 py-0.5 rounded-full bg-gym-secondary/20 text-gym-secondary text-[8px] font-bold">{customNutrientTypes.length}</span>}
-            </button>
-            <button onClick={() => { setShowDishBuilder(true); setDishName(''); setDishCategory('Breakfast'); setDishGoal('Maintenance'); setDishItems([]); setDishSearch(''); setEditingDishIdx(null); }}
-              className={cn("flex items-center gap-2 px-4 py-2 border rounded-xl font-bold text-xs transition-all",
-                'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10')}>
-              <Sparkles size={14} /> Meal Prep {savedDishes.length > 0 && <span className="px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-400 text-[8px] font-bold">{savedDishes.length}</span>}
-            </button>
-            <button onClick={() => { setShowDietBuilder(d => !d); }}
-              className={cn("flex items-center gap-2 px-4 py-2 border rounded-xl font-bold text-xs transition-all",
-                showDietBuilder ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10')}>
-              <Leaf size={14} /> Diet Builder {savedDiets.length > 0 && <span className="px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[8px] font-bold">{savedDiets.length}</span>}
-            </button>
+            <div className="flex items-center gap-1">
+              {['All', 'Proteins', 'Grains & Carbs', 'Fruits'].map(c => (
+                <button key={c} onClick={() => { setCategoryFilter(c); setIngPage(1); }}
+                  className={cn("px-2.5 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all",
+                    categoryFilter === c ? 'bg-gym-accent text-white' : 'text-white hover:bg-white/10')}>
+                  {c}
+                </button>
+              ))}
+            </div>
+            <select value={categoryFilter} onChange={e => { setCategoryFilter(e.target.value); setIngPage(1); }}
+              className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none">
+              {categories.map(c => <option key={c} value={c} className="bg-[#1e293b]">{c}</option>)}
+            </select>
             <button onClick={() => { setShowAddForm(true); setEditingItem(null); const extras: Record<string, number> = {}; customNutrientTypes.forEach(n => { extras[n.id] = 0; }); setNewIng({ name: '', unit: '1', cal: 0, protein: 0, carbs: 0, fats: 0, sodium: 0, potassium: 0, fiber: 0, sugar: 0, calcium: 0, iron: 0, category: 'Proteins', ...extras }); }}
-              className="flex items-center gap-2 px-4 py-2 bg-gym-accent text-white rounded-xl font-bold text-xs hover:bg-gym-accent/80 transition-all shadow-lg shadow-gym-accent/20">
-              <Plus size={14} /> Add Ingredient
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white shrink-0 transition-all"
+              style={{ background: 'linear-gradient(135deg, #6366F1 0%, #10B981 100%)' }}>
+              <Plus size={12} /> Add Ingredient
             </button>
-          </div>
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-            {categories.map(c => (
-              <button key={c} onClick={() => setCategoryFilter(c)}
-                className={cn("px-3 py-1 rounded-lg text-[10px] font-semibold border whitespace-nowrap transition-all",
-                  categoryFilter === c
-                    ? 'bg-gym-accent/10 border-gym-accent/30 text-gym-accent'
-                    : 'bg-white/5 border-white/5 text-slate-400 hover:text-white hover:bg-white/10')}>
-                {c}
-              </button>
-            ))}
+          </GlassCard>
+        </div>
+
+        {/* Results count + Select all */}
+        <div className="px-4 py-1 flex items-center justify-between shrink-0">
+          <span className="text-xs"><span className="text-gym-accent font-bold">{entries.length}</span> <span className="text-white">ingredients found</span></span>
+          <div className="flex gap-2">
+            <button onClick={() => setShowCalc(p => !p)}
+              className={cn("text-[10px] font-bold transition-all", showCalc ? 'text-gym-amber' : 'text-slate-500 hover:text-white')}>
+              {showCalc ? 'Hide' : 'Show'} Calculator
+            </button>
+            <button onClick={() => setShowNutrientManager(p => !p)}
+              className={cn("text-[10px] font-bold transition-all", showNutrientManager ? 'text-gym-secondary' : 'text-slate-500 hover:text-white')}>
+              Nutrient Types
+            </button>
           </div>
         </div>
 
-        {/* Nutrition Calculator */}
-        <AnimatePresence>
-          {showCalc && (
-            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden border-b border-white/5 shrink-0">
+        {/* Main content */}
+        <div className="flex-1 flex flex-col overflow-hidden px-4 pb-2">
+
+          {/* Tool panels as collapsible */}
+          <div className="shrink-0 max-h-[35vh] overflow-y-auto">
+
+        {/* Nutrition Calculator — always visible */}
               <div className="px-5 py-4">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
@@ -1829,48 +1792,59 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
                         onBlur={() => setTimeout(() => setShowCalcSuggestions(false), 150)}
                         onKeyDown={e => {
                           if (e.key === 'Enter' && calcSearch.trim()) {
-                            const qm = calcSearch.match(/^(\d+\.?\d*)\s+(.+)/);
-                            const qty = qm ? parseFloat(qm[1]) : 1;
-                            const term = (qm ? qm[2] : calcSearch).trim();
-                            // Try to find in DB first
-                            const match = Object.keys(allDB).find(n => n.toLowerCase() === term.toLowerCase())
-                              || Object.keys(allDB).find(n => n.toLowerCase().includes(term.toLowerCase()));
-                            const name = match || term;
-                            setCalcItems(prev => {
-                              const existing = prev.find(x => x.name === name);
-                              if (existing) return prev.map(x => x.name === name ? { ...x, qty: x.qty + qty } : x);
-                              return [...prev, { name, qty }];
-                            });
+                            const parsed = smartParseIngredient(calcSearch, allDB);
+                            if (parsed) {
+                              setCalcItems(prev => {
+                                const existing = prev.find(x => x.name === parsed.name);
+                                if (existing) return prev.map(x => x.name === parsed.name ? { ...x, qty: x.qty + parsed.qty, displayUnit: parsed.displayUnit, gramsInfo: parsed.gramsInfo } : x);
+                                return [...prev, { name: parsed.name, qty: parsed.qty, displayUnit: parsed.displayUnit, gramsInfo: parsed.gramsInfo }];
+                              });
+                            }
                             setCalcSearch('');
                             setShowCalcSuggestions(false);
                           }
                         }}
-                        placeholder="Type ingredient & press Enter (e.g. 3 Eggs, Paneer, Amla...)"
+                        placeholder="Type: 1 banana, 100g paneer, 2 cup rice, 3 eggs..."
                         className="w-full bg-white/5 border border-white/10 rounded-lg pl-8 pr-4 py-2 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-gym-amber/50" />
                       {showCalcSuggestions && calcSearch.length >= 1 && (() => {
-                        const qm = calcSearch.match(/^(\d+\.?\d*)\s+(.+)/);
-                        const qty = qm ? parseFloat(qm[1]) : 1;
-                        const term = (qm ? qm[2] : calcSearch).trim().toLowerCase();
-                        const matches = Object.entries(allDB).filter(([n]) => n.toLowerCase().includes(term)).slice(0, 8);
+                        const parsed = smartParseIngredient(calcSearch, allDB);
+                        const qm = calcSearch.match(/^(\d+\.?\d*)\s*(g|gm|gms|gram|grams|kg|ml|ltr|litre|liter|cup|cups|tbsp|tsp|glass|bowl|scoop|scoops|slice|slices|handful|plate|pc|pcs|piece|pieces)?\s+(.+)$/i);
+                        const term = (qm ? qm[3] : calcSearch.replace(/^[\d.]+\s*/, '')).trim().toLowerCase();
+                        const matches = Object.entries(allDB).filter(([n]) => n.toLowerCase().includes(term || calcSearch.toLowerCase())).slice(0, 8);
                         const hasExact = matches.some(([n]) => n.toLowerCase() === term);
                         return (
-                          <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-[#1e293b] border border-white/10 rounded-lg shadow-xl max-h-48 overflow-y-auto">
-                            {matches.map(([n, info]) => (
+                          <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-[#1e293b] border border-white/10 rounded-lg shadow-xl max-h-56 overflow-y-auto">
+                            {/* Smart parse preview */}
+                            {parsed && parsed.gramsInfo && (
+                              <div className="px-3 py-2 border-b border-gym-amber/20 bg-gym-amber/5">
+                                <div className="flex items-center gap-2">
+                                  <Zap size={10} className="text-gym-amber shrink-0" />
+                                  <span className="text-[9px] text-gym-amber font-bold">Smart Convert:</span>
+                                  <span className="text-[9px] text-white/80">{parsed.gramsInfo}</span>
+                                </div>
+                              </div>
+                            )}
+                            {matches.map(([n, info]) => {
+                              // Compute smart conversion for each suggestion
+                              const p = smartParseIngredient(calcSearch.replace(new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), n), allDB);
+                              const qty = p ? p.qty : 1;
+                              return (
                               <button key={n} type="button"
                                 onMouseDown={e => e.preventDefault()}
                                 onClick={() => {
+                                  const sp = smartParseIngredient(calcSearch.replace(new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), n), allDB) || { qty: 1, name: n, displayUnit: info.unit };
                                   setCalcItems(prev => {
                                     const existing = prev.find(x => x.name === n);
-                                    if (existing) return prev.map(x => x.name === n ? { ...x, qty: x.qty + qty } : x);
-                                    return [...prev, { name: n, qty }];
+                                    if (existing) return prev.map(x => x.name === n ? { ...x, qty: x.qty + sp.qty, displayUnit: sp.displayUnit, gramsInfo: sp.gramsInfo } : x);
+                                    return [...prev, { name: n, qty: sp.qty, displayUnit: sp.displayUnit, gramsInfo: sp.gramsInfo }];
                                   });
                                   setCalcSearch('');
                                   setShowCalcSuggestions(false);
                                 }}
                                 className="w-full text-left px-3 py-2 text-xs hover:bg-white/10 transition-colors flex items-center justify-between gap-2 border-b border-white/5 last:border-0">
                                 <div className="flex items-center gap-2 min-w-0">
-                                  <span className="text-white font-semibold truncate">{qty > 1 ? `${qty} × ` : ''}{n}</span>
-                                  <span className="text-[7px] px-1.5 py-0.5 rounded bg-white/5 text-slate-400 shrink-0">{info.category}</span>
+                                  <span className="text-white font-semibold truncate">{n}</span>
+                                  <span className="text-[7px] px-1.5 py-0.5 rounded bg-white/5 text-slate-400 shrink-0">{info.unit}</span>
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0 text-[8px]">
                                   <span className="text-white">{Math.round(info.cal * qty)}cal</span>
@@ -1879,24 +1853,25 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
                                   <span className="text-gym-rose">{+(info.fats * qty).toFixed(1)}f</span>
                                 </div>
                               </button>
-                            ))}
+                              );
+                            })}
                             {!hasExact && term.length >= 2 && (
                               <button type="button"
                                 onMouseDown={e => e.preventDefault()}
                                 onClick={() => {
-                                  const name = (qm ? qm[2] : calcSearch).trim();
+                                  const p = parsed || { qty: 1, name: calcSearch.trim(), displayUnit: 'pcs' };
                                   setCalcItems(prev => {
-                                    const existing = prev.find(x => x.name === name);
-                                    if (existing) return prev.map(x => x.name === name ? { ...x, qty: x.qty + qty } : x);
-                                    return [...prev, { name, qty }];
+                                    const existing = prev.find(x => x.name === p.name);
+                                    if (existing) return prev.map(x => x.name === p.name ? { ...x, qty: x.qty + p.qty } : x);
+                                    return [...prev, { name: p.name, qty: p.qty, displayUnit: p.displayUnit }];
                                   });
                                   setCalcSearch('');
                                   setShowCalcSuggestions(false);
                                 }}
                                 className="w-full text-left px-3 py-2 text-xs hover:bg-gym-amber/10 transition-colors flex items-center gap-2 border-t border-white/10">
                                 <Plus size={11} className="text-gym-amber shrink-0" />
-                                <span className="text-gym-amber font-semibold">Add "{(qm ? qm[2] : calcSearch).trim()}"</span>
-                                <span className="text-[8px] text-slate-500">as custom ingredient{qty > 1 ? ` (×${qty})` : ''}</span>
+                                <span className="text-gym-amber font-semibold">Add "{term}"</span>
+                                <span className="text-[8px] text-slate-500">as custom ingredient</span>
                               </button>
                             )}
                           </div>
@@ -1905,6 +1880,49 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
                     </div>
                   </div>
                 </div>
+
+                {/* Smart Suggestion Filters */}
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                  {Object.entries(SMART_FILTERS).map(([key, f]) => (
+                    <button key={key} onClick={() => setActiveSmartFilter(prev => prev === key ? null : key)}
+                      className={cn("px-2.5 py-1 rounded-full text-[9px] font-bold border transition-all flex items-center gap-1",
+                        activeSmartFilter === key ? `${f.bg} ${f.color}` : 'bg-white/[0.03] border-white/10 text-slate-500 hover:bg-white/5 hover:text-white')}>
+                      <span className="text-[10px]">{f.icon}</span> {f.label}
+                    </button>
+                  ))}
+                </div>
+                {/* Filtered ingredient suggestions */}
+                {activeSmartFilter && (() => {
+                  const filter = SMART_FILTERS[activeSmartFilter];
+                  const suggested = Object.entries(allDB).filter(([name, info]) => filter.match(name, info)).slice(0, 12);
+                  return (
+                    <div className="mb-3 p-3 rounded-xl bg-white/[0.02] border border-white/5">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-[11px]">{filter.icon}</span>
+                        <span className={cn("text-[9px] font-bold uppercase tracking-wider", filter.color)}>{filter.label} foods</span>
+                        <span className="text-[8px] text-slate-600">({suggested.length} found) — click to add</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {suggested.map(([name, info]) => (
+                          <button key={name}
+                            onClick={() => {
+                              setCalcItems(prev => {
+                                const existing = prev.find(x => x.name === name);
+                                if (existing) return prev.map(x => x.name === name ? { ...x, qty: x.qty + 1 } : x);
+                                return [...prev, { name, qty: 1 }];
+                              });
+                            }}
+                            className={cn("px-2 py-1 rounded-lg border text-[9px] font-medium transition-all hover:scale-105 flex items-center gap-1.5",
+                              calcItems.some(x => x.name === name) ? `${filter.bg} ${filter.color}` : 'bg-white/[0.03] border-white/10 text-slate-300 hover:bg-white/5')}>
+                            <span className="font-semibold">{name}</span>
+                            <span className="text-[7px] opacity-60">{info.cal}cal · {info.protein}p</span>
+                            {calcItems.some(x => x.name === name) && <Check size={8} className="text-gym-accent" />}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Calculator items list with per-item nutrient breakdown */}
                 {calcItems.length > 0 ? (() => {
@@ -1959,7 +1977,7 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
                       <div className="mb-3 rounded-lg border border-white/5 overflow-hidden">
                         {/* Table header */}
                         <div className="flex items-center gap-1 px-3 py-1.5 bg-white/[0.04] border-b border-white/5 text-[8px] font-bold uppercase tracking-wider text-slate-500">
-                          <span className="w-[130px] shrink-0">Ingredient</span>
+                          <span className="w-[160px] shrink-0">Ingredient</span>
                           <span className="w-[80px] shrink-0 text-center">Qty</span>
                           {activeNutrients.map(n => (
                             <span key={n.key} className={cn("flex-1 text-center min-w-[45px]", n.color)}>{n.label}</span>
@@ -1974,9 +1992,13 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
                             return (
                               <div key={item.name} className={cn("flex items-center gap-1 px-3 py-1.5 group hover:bg-white/5 transition-all",
                                 idx % 2 === 0 ? 'bg-white/[0.02]' : '')}>
-                                <div className="w-[130px] shrink-0 flex items-center gap-1 min-w-0">
-                                  <span className="text-[10px] font-semibold text-white truncate">{item.name}</span>
-                                  {!info && <span className="text-[6px] px-1 py-0.5 rounded bg-gym-amber/10 border border-gym-amber/20 text-gym-amber font-bold shrink-0">NEW</span>}
+                                <div className="w-[160px] shrink-0 min-w-0">
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[10px] font-semibold text-white truncate">{item.name}</span>
+                                    {!info && <span className="text-[6px] px-1 py-0.5 rounded bg-gym-amber/10 border border-gym-amber/20 text-gym-amber font-bold shrink-0">NEW</span>}
+                                  </div>
+                                  {item.gramsInfo && <span className="text-[7px] text-gym-amber/70 block truncate" title={item.gramsInfo}>{item.gramsInfo}</span>}
+                                  {item.displayUnit && !item.gramsInfo && <span className="text-[7px] text-slate-500 block">{item.displayUnit}</span>}
                                 </div>
                                 <div className="w-[80px] shrink-0 flex items-center justify-center gap-0.5">
                                   <button onClick={() => setCalcItems(p => p.map((x, i) => i === idx ? { ...x, qty: Math.max(0.5, x.qty - 0.5) } : x))}
@@ -2002,7 +2024,7 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
                         </div>
                         {/* Totals row */}
                         <div className="flex items-center gap-1 px-3 py-2 bg-white/[0.06] border-t border-white/10">
-                          <span className="w-[130px] shrink-0 text-[10px] font-extrabold text-gym-amber uppercase tracking-wider">Total</span>
+                          <span className="w-[160px] shrink-0 text-[10px] font-extrabold text-gym-amber uppercase tracking-wider">Total</span>
                           <span className="w-[80px] shrink-0 text-center text-[9px] text-slate-400">{calcItems.length} items</span>
                           {activeNutrients.map(n => (
                             <span key={n.key} className={cn("flex-1 text-center text-[10px] font-extrabold min-w-[45px]", n.color)}>
@@ -2013,21 +2035,31 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
                         </div>
                       </div>
 
-                      {/* Visual summary cards - only for active nutrients */}
+                      {/* Nutrition Sliders */}
                       <div className="flex items-center gap-1.5 mb-2">
                         <Flame size={11} className="text-gym-amber" />
                         <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Nutrition Summary</span>
+                        <span className="text-[8px] text-slate-600">({calcItems.length} ingredient{calcItems.length > 1 ? 's' : ''})</span>
                       </div>
-                      <div className={cn("grid gap-1.5", activeNutrients.length <= 5 ? 'grid-cols-' + activeNutrients.length : 'grid-cols-5')}>
-                        {activeNutrients.map(n => (
-                          <div key={n.key} className={cn("rounded-lg px-2 py-1.5 border border-white/5", n.bg)}>
-                            <div className={cn("text-[7px] font-bold uppercase tracking-wider mb-0.5", n.color)}>{n.label}</div>
-                            <div className={cn("text-sm font-extrabold", n.color)}>
-                              {n.key === 'cal' || n.key === 'sodium' || n.key === 'potassium' || n.key === 'calcium' ? Math.round(totals[n.key] || 0) : +(totals[n.key] || 0).toFixed(1)}
-                              <span className="text-[7px] font-normal ml-0.5 opacity-60">{n.unit}</span>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                        {activeNutrients.map(n => {
+                          const val = n.key === 'cal' || n.key === 'sodium' || n.key === 'potassium' || n.key === 'calcium' ? Math.round(totals[n.key] || 0) : +(totals[n.key] || 0).toFixed(1);
+                          const maxMap: Record<string, number> = { cal: 2500, protein: 200, carbs: 300, fats: 100, sodium: 2300, potassium: 3500, fiber: 40, sugar: 50, calcium: 1300, iron: 18 };
+                          const max = Math.max(maxMap[n.key] || 500, val * 1.2);
+                          const pct = max > 0 ? Math.min(100, Math.round((val / max) * 100)) : 0;
+                          const barColor = n.color.includes('white') ? 'rgba(255,255,255,0.5)' : n.color.includes('accent') ? '#10B981' : n.color.includes('amber') ? '#F59E0B' : n.color.includes('rose') ? '#F43F5E' : n.color.includes('sky') ? '#38BDF8' : n.color.includes('violet') ? '#A78BFA' : n.color.includes('emerald') ? '#34D399' : n.color.includes('orange') ? '#FB923C' : n.color.includes('cyan') ? '#67E8F9' : n.color.includes('red') ? '#F87171' : '#A78BFA';
+                          return (
+                            <div key={n.key}>
+                              <div className="flex items-center justify-between mb-0.5">
+                                <span className={cn("text-[8px] uppercase font-bold", n.color)}>{n.label} ({n.unit})</span>
+                                <span className={cn("text-[10px] font-extrabold", n.color)}>{val}</span>
+                              </div>
+                              <div className="relative h-2 rounded-full bg-white/10 overflow-hidden">
+                                <div className="absolute left-0 top-0 h-full rounded-full transition-all duration-500 ease-out" style={{ width: `${pct}%`, backgroundColor: barColor }} />
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </>
                   );
@@ -2038,338 +2070,103 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
                   </div>
                 )}
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
-        {/* Diet Builder */}
+        {/* Nutrient Types Manager */}
         <AnimatePresence>
-          {showDietBuilder && (
+          {showNutrientManager && (
             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
               className="overflow-hidden border-b border-white/5 shrink-0">
               <div className="px-5 py-4">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <Leaf size={14} className="text-emerald-400" />
-                    <h4 className="text-sm font-bold text-white">Diet Builder</h4>
-                    <span className="text-[8px] text-slate-500">Create diets with ingredients by meal session</span>
+                    <Zap size={14} className="text-gym-secondary" />
+                    <h4 className="text-sm font-bold text-white">Custom Nutrient Types</h4>
+                    <span className="text-[8px] text-slate-500">Add nutrients like Vitamin A, Vitamin B12, Magnesium, etc.</span>
                   </div>
-                  {dietItems.length > 0 && (
-                    <button onClick={() => { setDietItems([]); setDietName(''); setEditingDietIdx(null); }} className="text-[9px] text-slate-500 hover:text-gym-rose transition-colors">Clear all</button>
+                </div>
+                {/* Add new nutrient type form */}
+                <div className="flex gap-2 mb-3">
+                  <input type="text" value={newNutrient.name}
+                    onChange={e => setNewNutrient(p => ({ ...p, name: e.target.value }))}
+                    placeholder="Nutrient name (e.g. Vitamin A)"
+                    className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-gym-secondary/50" />
+                  <input type="text" value={newNutrient.unit}
+                    onChange={e => setNewNutrient(p => ({ ...p, unit: e.target.value }))}
+                    placeholder="Unit (mg, μg, IU)"
+                    className="w-20 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-gym-secondary/50" />
+                  <select value={newNutrient.color} onChange={e => setNewNutrient(p => ({ ...p, color: e.target.value }))}
+                    className="w-28 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-gym-secondary/50">
+                    {NUTRIENT_COLORS.map(c => (
+                      <option key={c} value={c} className="bg-[#1e293b]">{c.replace('text-', '').replace('-400', '').replace('-300', '')}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => {
+                      if (!newNutrient.name.trim()) return;
+                      const id = newNutrient.name.trim().toLowerCase().replace(/\s+/g, '_');
+                      if (editingNutrient) {
+                        onUpdateNutrientType(editingNutrient, { id, name: newNutrient.name.trim(), unit: newNutrient.unit, color: newNutrient.color });
+                        setEditingNutrient(null);
+                      } else {
+                        onAddNutrientType({ id, name: newNutrient.name.trim(), unit: newNutrient.unit, color: newNutrient.color });
+                      }
+                      setNewNutrient({ name: '', unit: 'mg', color: NUTRIENT_COLORS[(customNutrientTypes.length + 1) % NUTRIENT_COLORS.length] });
+                    }}
+                    disabled={!newNutrient.name.trim()}
+                    className="px-4 py-1.5 bg-gym-secondary text-white rounded-lg text-xs font-bold disabled:opacity-40 hover:bg-gym-secondary/80 transition-all flex items-center gap-1">
+                    {editingNutrient ? <><Save size={11} /> Update</> : <><Plus size={11} /> Add</>}
+                  </button>
+                  {editingNutrient && (
+                    <button onClick={() => { setEditingNutrient(null); setNewNutrient({ name: '', unit: 'mg', color: NUTRIENT_COLORS[0] }); }}
+                      className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-xs text-slate-400 hover:bg-white/10 transition-all">Cancel</button>
                   )}
                 </div>
-
-                {/* Diet Name */}
-                <input type="text" value={dietName} onChange={e => setDietName(e.target.value)}
-                  placeholder="Diet name (e.g. Muscle Gain Day 1, Client Morning Plan...)"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white font-semibold placeholder:text-slate-500 focus:outline-none focus:border-emerald-500/50 mb-3" />
-
-                {/* Session selector + Search */}
-                <div className="flex gap-2 mb-3">
-                  <div className="flex items-center bg-white/5 border border-white/10 rounded-lg overflow-hidden shrink-0">
-                    {(['morning', 'afternoon', 'evening'] as const).map(s => (
-                      <button key={s} onClick={() => setDietSession(s)}
-                        className={cn("px-3 py-2 text-[9px] font-bold capitalize transition-all",
-                          dietSession === s
-                            ? s === 'morning' ? 'bg-amber-500/20 text-amber-400' : s === 'afternoon' ? 'bg-sky-500/20 text-sky-400' : 'bg-indigo-500/20 text-indigo-400'
-                            : 'text-slate-500 hover:text-white')}>
-                        {s === 'morning' ? <Sun size={11} className="inline mr-1" /> : s === 'afternoon' ? <Activity size={11} className="inline mr-1" /> : <Moon size={11} className="inline mr-1" />}
-                        {s}
-                      </button>
+                {/* List existing custom nutrient types */}
+                {customNutrientTypes.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {customNutrientTypes.map(nt => (
+                      <div key={nt.id} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/5 group">
+                        <span className={cn("w-2 h-2 rounded-full", nt.color.replace('text-', 'bg-'))} />
+                        <span className="text-xs font-semibold text-white">{nt.name}</span>
+                        <span className="text-[8px] text-slate-500">({nt.unit})</span>
+                        <button onClick={() => { setEditingNutrient(nt.id); setNewNutrient({ name: nt.name, unit: nt.unit, color: nt.color }); }}
+                          className="ml-1 p-0.5 rounded text-slate-600 hover:text-gym-secondary opacity-0 group-hover:opacity-100 transition-all" title="Edit">
+                          <Pencil size={9} />
+                        </button>
+                        <button onClick={() => onDeleteNutrientType(nt.id)}
+                          className="p-0.5 rounded text-slate-600 hover:text-gym-rose opacity-0 group-hover:opacity-100 transition-all" title="Delete">
+                          <Trash2 size={9} />
+                        </button>
+                      </div>
                     ))}
                   </div>
-                  <div className="relative flex-1">
-                    <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                    <input type="text" value={dietSearch}
-                      onChange={e => { setDietSearch(e.target.value); setShowDietSuggestions(true); }}
-                      onFocus={() => setShowDietSuggestions(true)}
-                      onBlur={() => setTimeout(() => setShowDietSuggestions(false), 150)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter' && dietSearch.trim()) {
-                          const qm = dietSearch.match(/^(\d+\.?\d*)\s+(.+)/);
-                          const qty = qm ? parseFloat(qm[1]) : 1;
-                          const term = (qm ? qm[2] : dietSearch).trim();
-                          const match = Object.keys(allDB).find(n => n.toLowerCase() === term.toLowerCase())
-                            || Object.keys(allDB).find(n => n.toLowerCase().includes(term.toLowerCase()));
-                          if (match) {
-                            setDietItems(prev => [...prev, { name: match, qty, session: dietSession }]);
-                            setDietSearch('');
-                            setShowDietSuggestions(false);
-                          }
-                        }
-                      }}
-                      placeholder="Type ingredient & press Enter..."
-                      className="w-full bg-white/5 border border-white/10 rounded-lg pl-8 pr-4 py-2 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500/50" />
-                    {showDietSuggestions && dietSearch.length >= 1 && (() => {
-                      const qm = dietSearch.match(/^(\d+\.?\d*)\s+(.+)/);
-                      const qty = qm ? parseFloat(qm[1]) : 1;
-                      const term = (qm ? qm[2] : dietSearch).trim().toLowerCase();
-                      const matches = Object.entries(allDB).filter(([n]) => n.toLowerCase().includes(term)).slice(0, 6);
-                      const dishMatches = savedDishes.filter(d => d.name.toLowerCase().includes(term)).slice(0, 4);
-                      if (matches.length === 0 && dishMatches.length === 0) return null;
-                      return (
-                        <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-[#1e293b] border border-white/10 rounded-lg shadow-xl max-h-56 overflow-y-auto">
-                          {/* Dish matches first */}
-                          {dishMatches.length > 0 && (
-                            <>
-                              <div className="px-3 py-1 bg-purple-500/10 text-[8px] font-bold text-purple-400 uppercase tracking-wider">Dishes</div>
-                              {dishMatches.map(dish => {
-                                let dCal = 0, dProt = 0, dCarb = 0, dFat = 0;
-                                dish.items.forEach(item => {
-                                  const info = allDB[item.name];
-                                  if (info) { dCal += Math.round(info.cal * item.qty); dProt += +(info.protein * item.qty).toFixed(1); dCarb += +(info.carbs * item.qty).toFixed(1); dFat += +(info.fats * item.qty).toFixed(1); }
-                                });
-                                return (
-                                  <button key={`dish-${dish.name}`} type="button"
-                                    onMouseDown={e => e.preventDefault()}
-                                    onClick={() => {
-                                      dish.items.forEach(item => {
-                                        setDietItems(prev => [...prev, { name: item.name, qty: item.qty * qty, session: dietSession }]);
-                                      });
-                                      setDietSearch('');
-                                      setShowDietSuggestions(false);
-                                    }}
-                                    className="w-full text-left px-3 py-2 text-xs hover:bg-purple-500/10 transition-colors flex items-center justify-between gap-2 border-b border-white/5 last:border-0">
-                                    <div className="flex items-center gap-2 min-w-0">
-                                      <Sparkles size={10} className="text-purple-400 shrink-0" />
-                                      <span className="text-purple-300 font-semibold truncate">{qty > 1 ? `${qty} × ` : ''}{dish.name}</span>
-                                      <span className="text-[7px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 shrink-0">{dish.items.length} items</span>
-                                    </div>
-                                    <div className="flex items-center gap-2 shrink-0 text-[8px]">
-                                      <span className="text-white">{Math.round(dCal * qty)}cal</span>
-                                      <span className="text-gym-accent">{+(dProt * qty).toFixed(1)}p</span>
-                                      <span className="text-gym-amber">{+(dCarb * qty).toFixed(1)}c</span>
-                                      <span className="text-gym-rose">{+(dFat * qty).toFixed(1)}f</span>
-                                    </div>
-                                  </button>
-                                );
-                              })}
-                            </>
-                          )}
-                          {/* Ingredient matches */}
-                          {matches.length > 0 && dishMatches.length > 0 && (
-                            <div className="px-3 py-1 bg-white/[0.03] text-[8px] font-bold text-slate-500 uppercase tracking-wider">Ingredients</div>
-                          )}
-                          {matches.map(([n, info]) => (
-                            <button key={n} type="button"
-                              onMouseDown={e => e.preventDefault()}
-                              onClick={() => {
-                                setDietItems(prev => [...prev, { name: n, qty, session: dietSession }]);
-                                setDietSearch('');
-                                setShowDietSuggestions(false);
-                              }}
-                              className="w-full text-left px-3 py-2 text-xs hover:bg-white/10 transition-colors flex items-center justify-between gap-2 border-b border-white/5 last:border-0">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <span className="text-white font-semibold truncate">{qty > 1 ? `${qty} × ` : ''}{n}</span>
-                                <span className="text-[7px] px-1.5 py-0.5 rounded bg-white/5 text-slate-400 shrink-0">{info.category}</span>
-                              </div>
-                              <div className="flex items-center gap-2 shrink-0 text-[8px]">
-                                <span className="text-white">{Math.round(info.cal * qty)}cal</span>
-                                <span className="text-gym-accent">{+(info.protein * qty).toFixed(1)}p</span>
-                                <span className="text-gym-amber">{+(info.carbs * qty).toFixed(1)}c</span>
-                                <span className="text-gym-rose">{+(info.fats * qty).toFixed(1)}f</span>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                </div>
-
-                {/* Diet Items by Session */}
-                {dietItems.length > 0 ? (() => {
-                  const sessions = ['morning', 'afternoon', 'evening'] as const;
-                  const sessionLabels = { morning: 'Morning', afternoon: 'Afternoon', evening: 'Evening' };
-                  const sessionColors = { morning: 'text-amber-400', afternoon: 'text-sky-400', evening: 'text-indigo-400' };
-                  const sessionBg = { morning: 'bg-amber-500/10', afternoon: 'bg-sky-500/10', evening: 'bg-indigo-500/10' };
-                  const sessionIcons = { morning: <Sun size={11} />, afternoon: <Activity size={11} />, evening: <Moon size={11} /> };
-
-                  // Compute grand totals
-                  let grandCal = 0, grandProtein = 0, grandCarbs = 0, grandFats = 0;
-                  dietItems.forEach(item => {
-                    const info = allDB[item.name];
-                    if (info) {
-                      grandCal += Math.round(info.cal * item.qty);
-                      grandProtein += +(info.protein * item.qty).toFixed(1);
-                      grandCarbs += +(info.carbs * item.qty).toFixed(1);
-                      grandFats += +(info.fats * item.qty).toFixed(1);
-                    }
-                  });
-
-                  return (
-                    <>
-                      {sessions.map(s => {
-                        const sessionItems = dietItems.filter(d => d.session === s);
-                        if (sessionItems.length === 0) return null;
-                        let sCal = 0, sProt = 0, sCarb = 0, sFat = 0;
-                        sessionItems.forEach(item => {
-                          const info = allDB[item.name];
-                          if (info) { sCal += Math.round(info.cal * item.qty); sProt += +(info.protein * item.qty).toFixed(1); sCarb += +(info.carbs * item.qty).toFixed(1); sFat += +(info.fats * item.qty).toFixed(1); }
-                        });
-                        return (
-                          <div key={s} className="mb-3">
-                            <div className="flex items-center gap-2 mb-1.5">
-                              <span className={cn("flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider", sessionColors[s])}>
-                                {sessionIcons[s]} {sessionLabels[s]}
-                              </span>
-                              <span className="text-[8px] text-slate-600">{sessionItems.length} item{sessionItems.length > 1 ? 's' : ''}</span>
-                              <span className="text-[8px] text-slate-500 ml-auto">{sCal}cal · {sProt}p · {sCarb}c · {sFat}f</span>
-                            </div>
-                            <div className="rounded-lg border border-white/5 overflow-hidden">
-                              {sessionItems.map((item, localIdx) => {
-                                const globalIdx = dietItems.indexOf(item);
-                                const info = allDB[item.name];
-                                return (
-                                  <div key={`${item.name}-${globalIdx}`} className={cn("flex items-center gap-2 px-3 py-1.5 group hover:bg-white/5 transition-all",
-                                    localIdx % 2 === 0 ? 'bg-white/[0.02]' : '')}>
-                                    <span className="text-[10px] font-semibold text-white truncate flex-1 min-w-0">{item.name}</span>
-                                    {info && (
-                                      <div className="flex items-center gap-1.5 text-[8px] shrink-0">
-                                        <span className="text-white">{Math.round(info.cal * item.qty)}</span>
-                                        <span className="text-gym-accent">{+(info.protein * item.qty).toFixed(1)}p</span>
-                                        <span className="text-gym-amber">{+(info.carbs * item.qty).toFixed(1)}c</span>
-                                        <span className="text-gym-rose">{+(info.fats * item.qty).toFixed(1)}f</span>
-                                      </div>
-                                    )}
-                                    <div className="flex items-center gap-0.5 shrink-0">
-                                      <button onClick={() => setDietItems(p => p.map((x, i) => i === globalIdx ? { ...x, qty: Math.max(0.5, x.qty - 0.5) } : x))}
-                                        className="w-4 h-4 rounded bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 flex items-center justify-center text-[10px] font-bold transition-all">-</button>
-                                      <input type="number" value={item.qty} min={0.5} step={0.5}
-                                        onChange={e => { const v = parseFloat(e.target.value) || 0.5; setDietItems(p => p.map((x, i) => i === globalIdx ? { ...x, qty: v } : x)); }}
-                                        className="w-10 text-center bg-white/5 border border-white/10 rounded px-0.5 py-0.5 text-[9px] text-emerald-400 font-bold focus:outline-none focus:border-emerald-500/50" />
-                                      <button onClick={() => setDietItems(p => p.map((x, i) => i === globalIdx ? { ...x, qty: x.qty + 0.5 } : x))}
-                                        className="w-4 h-4 rounded bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 flex items-center justify-center text-[10px] font-bold transition-all">+</button>
-                                    </div>
-                                    <button onClick={() => setDietItems(p => p.filter((_, i) => i !== globalIdx))}
-                                      className="p-0.5 text-slate-600 hover:text-gym-rose opacity-0 group-hover:opacity-100 transition-all shrink-0">
-                                      <X size={10} />
-                                    </button>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })}
-
-                      {/* Grand Totals */}
-                      <div className="rounded-lg bg-white/[0.04] border border-white/10 px-3 py-2 flex items-center gap-4 mb-3">
-                        <span className="text-[9px] font-extrabold text-emerald-400 uppercase tracking-wider">Total</span>
-                        <span className="text-[9px] text-slate-400">{dietItems.length} items</span>
-                        <span className="ml-auto flex items-center gap-3 text-[10px] font-bold">
-                          <span className="text-white">{grandCal} cal</span>
-                          <span className="text-gym-accent">{+grandProtein.toFixed(1)}g P</span>
-                          <span className="text-gym-amber">{+grandCarbs.toFixed(1)}g C</span>
-                          <span className="text-gym-rose">{+grandFats.toFixed(1)}g F</span>
-                        </span>
-                      </div>
-
-                      {/* Macro bar */}
-                      {grandProtein + grandCarbs + grandFats > 0 && (
-                        <div className="mb-3">
-                          <div className="flex items-center gap-1 h-2 rounded-full overflow-hidden bg-white/5">
-                            <div className="h-full bg-gym-accent rounded-full transition-all" style={{ width: `${(grandProtein / (grandProtein + grandCarbs + grandFats)) * 100}%` }} />
-                            <div className="h-full bg-gym-amber rounded-full transition-all" style={{ width: `${(grandCarbs / (grandProtein + grandCarbs + grandFats)) * 100}%` }} />
-                            <div className="h-full bg-gym-rose rounded-full transition-all" style={{ width: `${(grandFats / (grandProtein + grandCarbs + grandFats)) * 100}%` }} />
-                          </div>
-                          <div className="flex items-center gap-4 mt-1 text-[8px] text-slate-400">
-                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gym-accent" />Protein {Math.round((grandProtein / (grandProtein + grandCarbs + grandFats)) * 100)}%</span>
-                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gym-amber" />Carbs {Math.round((grandCarbs / (grandProtein + grandCarbs + grandFats)) * 100)}%</span>
-                            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gym-rose" />Fat {Math.round((grandFats / (grandProtein + grandCarbs + grandFats)) * 100)}%</span>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Save Diet */}
-                      <button
-                        onClick={() => {
-                          if (!dietName.trim() || dietItems.length === 0) return;
-                          if (editingDietIdx !== null) {
-                            setSavedDiets(p => p.map((d, i) => i === editingDietIdx ? { name: dietName.trim(), items: [...dietItems] } : d));
-                            setEditingDietIdx(null);
-                          } else {
-                            setSavedDiets(p => [...p, { name: dietName.trim(), items: [...dietItems] }]);
-                          }
-                          setDietName('');
-                          setDietItems([]);
-                        }}
-                        disabled={!dietName.trim() || dietItems.length === 0}
-                        className="w-full py-2 bg-emerald-500 text-white rounded-lg text-xs font-bold disabled:opacity-40 hover:bg-emerald-500/80 transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20">
-                        <Save size={12} /> {editingDietIdx !== null ? 'Update Diet' : 'Save Diet'}
-                      </button>
-                    </>
-                  );
-                })() : (
-                  <div className="text-center py-4">
-                    <Apple size={24} className="mx-auto text-slate-700 mb-2" />
-                    <p className="text-[10px] text-slate-600">Select a meal session, then add ingredients to build your diet</p>
-                  </div>
-                )}
-
-                {/* Saved Diets List */}
-                {savedDiets.length > 0 && (
-                  <div className="mt-4 pt-3 border-t border-white/5">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Saved Diets ({savedDiets.length})</span>
-                    <div className="space-y-1.5">
-                      {savedDiets.map((diet, idx) => {
-                        let dCal = 0, dProt = 0, dCarb = 0, dFat = 0;
-                        diet.items.forEach(item => {
-                          const info = allDB[item.name];
-                          if (info) { dCal += Math.round(info.cal * item.qty); dProt += +(info.protein * item.qty).toFixed(1); dCarb += +(info.carbs * item.qty).toFixed(1); dFat += +(info.fats * item.qty).toFixed(1); }
-                        });
-                        return (
-                          <div key={idx} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/[0.03] border border-white/5 hover:bg-white/5 transition-all group">
-                            <Leaf size={12} className="text-emerald-400 shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <span className="text-xs font-bold text-white block truncate">{diet.name}</span>
-                              <div className="flex items-center gap-2 text-[8px] mt-0.5">
-                                <span className="text-slate-400">{diet.items.length} items</span>
-                                <span className="text-white">{dCal}cal</span>
-                                <span className="text-gym-accent">{+dProt.toFixed(1)}p</span>
-                                <span className="text-gym-amber">{+dCarb.toFixed(1)}c</span>
-                                <span className="text-gym-rose">{+dFat.toFixed(1)}f</span>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
-                              <button onClick={() => { setDietName(diet.name); setDietItems([...diet.items]); setEditingDietIdx(idx); }}
-                                className="p-1 rounded text-slate-500 hover:text-emerald-400 hover:bg-white/10 transition-all" title="Edit">
-                                <Edit3 size={11} />
-                              </button>
-                              <button onClick={() => { setDietName(diet.name + ' (Copy)'); setDietItems([...diet.items]); setEditingDietIdx(null); }}
-                                className="p-1 rounded text-slate-500 hover:text-gym-secondary hover:bg-white/10 transition-all" title="Duplicate">
-                                <Copy size={11} />
-                              </button>
-                              <button onClick={() => setSavedDiets(p => p.filter((_, i) => i !== idx))}
-                                className="p-1 rounded text-slate-500 hover:text-gym-rose hover:bg-white/10 transition-all" title="Delete">
-                                <Trash2 size={11} />
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
+                ) : (
+                  <p className="text-[10px] text-slate-600 italic">No custom nutrient types yet. Add one above to track additional nutrients like Vitamin A, B12, Magnesium, etc.</p>
                 )}
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Main Content Area - Side by Side */}
-        <div className={cn("flex-1 flex overflow-hidden", showAddForm ? 'flex-row' : 'flex-col')}>
-
-        {/* Add / Edit Form - Left Panel */}
+        {/* Add / Edit Form */}
         <AnimatePresence>
           {showAddForm && (
-            <motion.div initial={{ width: 0, opacity: 0 }} animate={{ width: '50%', opacity: 1 }} exit={{ width: 0, opacity: 0 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="overflow-y-auto overflow-x-hidden border-r border-white/10 shrink-0 h-full w-1/2">
+            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+              className="overflow-hidden border-b border-white/5 shrink-0">
               <div className="px-5 py-4">
-                <h4 className="text-sm font-bold text-white mb-3">{editingItem ? `Edit: ${editingItem}` : 'Add New Ingredient'}</h4>
-                <div className="flex flex-col gap-2 mb-3">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-bold text-white">{editingItem ? `Edit: ${editingItem}` : 'Add New Ingredient'}</h4>
+                  {newIng.cal > 0 && !editingItem && (
+                    <div className="flex items-center gap-2 text-[9px]">
+                      <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gym-accent/10 border border-gym-accent/20 text-gym-accent font-bold">
+                        <Check size={9} /> Nutrients auto-filled
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <div className="grid grid-cols-12 gap-2 mb-3">
                   {/* Ingredient dropdown */}
-                  <div className="relative">
+                  <div className="col-span-12 relative">
                     <label className="text-[8px] text-slate-500 uppercase font-bold block mb-1">Ingredient Name</label>
                     <input type="text" value={newIng.name}
                       onChange={e => {
@@ -2405,15 +2202,36 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
                       onFocus={() => setShowNameSuggestions(true)}
                       onBlur={() => setTimeout(() => setShowNameSuggestions(false), 150)}
                       disabled={!!editingItem}
-                      placeholder="e.g. 5 Eggs, 250 Chicken Breast, Rice..."
-                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-gym-accent/50 disabled:opacity-50" />
-                    {showNameSuggestions && !editingItem && newIng.name.length >= 1 && (() => {
+                      placeholder="Select or type ingredient..."
+                      className="w-full bg-white/5 border border-white/10 rounded-lg pl-3 pr-7 py-1.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-gym-accent/50 disabled:opacity-50" />
+                    {!editingItem && (
+                      <button type="button"
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => setShowNameSuggestions(p => !p)}
+                        className="absolute right-2 top-[26px] text-slate-500 hover:text-white transition-colors p-0.5">
+                        <ChevronDown size={12} className={cn("transition-transform", showNameSuggestions && "rotate-180")} />
+                      </button>
+                    )}
+                    {showNameSuggestions && !editingItem && (() => {
                       const term = newIng.name.trim().toLowerCase();
-                      const matches = Object.entries(allDB).filter(([n]) => n.toLowerCase().includes(term)).slice(0, 8);
-                      if (matches.length === 0) return null;
+                      const words = term.split(/\s+/).filter(w => w.length > 0);
+                      const allEntries = Object.entries(allDB);
+                      const matches = term.length > 0
+                        ? allEntries.filter(([n]) => {
+                            const nl = n.toLowerCase();
+                            return nl.includes(term) || words.some(w => nl.includes(w));
+                          }).slice(0, 12)
+                        : allEntries.slice(0, 30);
+                      const grouped = term.length === 0;
+                      const categories = grouped ? [...new Set(matches.map(([, info]) => info.category))] : [];
                       return (
-                        <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-[#1e293b] border border-white/10 rounded-lg shadow-xl max-h-48 overflow-y-auto">
-                          {matches.map(([n, info]) => (
+                        <div className="absolute z-[100] top-full left-0 right-0 mt-1 bg-[#1e293b] border border-white/10 rounded-lg shadow-2xl max-h-64 overflow-y-auto"
+                          style={{ boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }}>
+                          {grouped && <div className="px-3 py-1.5 text-[8px] text-slate-500 uppercase font-bold tracking-wider border-b border-white/5 bg-white/[0.02] sticky top-0 z-10">Select an ingredient ({allEntries.length} available)</div>}
+                          {(grouped ? categories : ['']).map(cat => (
+                            <div key={cat || 'all'}>
+                              {grouped && cat && <div className="px-3 py-1 text-[7px] text-gym-accent/70 uppercase font-bold tracking-widest bg-white/[0.02] border-t border-white/5 sticky top-7 z-10">{cat}</div>}
+                              {matches.filter(([, info]) => !grouped || info.category === cat).map(([n, info]) => (
                             <button key={n} type="button"
                               onMouseDown={e => e.preventDefault()}
                               onClick={() => {
@@ -2443,13 +2261,28 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
                                 <span className="text-gym-rose">{info.fats}f</span>
                               </div>
                             </button>
+                              ))}
+                            </div>
                           ))}
+                          {term.length > 0 && (
+                            <div className="px-3 py-2 border-t border-white/10 bg-white/[0.02] sticky bottom-0">
+                              {matches.length === 0 ? (
+                                <div className="flex items-center gap-2 text-[9px]">
+                                  <Plus size={10} className="text-gym-accent" />
+                                  <span className="text-slate-400">No match found — type name & set nutrients manually, then click</span>
+                                  <span className="text-gym-accent font-bold">Save Ingredient</span>
+                                </div>
+                              ) : (
+                                <div className="text-[8px] text-slate-500">{matches.length} match{matches.length > 1 ? 'es' : ''} — click to select & auto-fill nutrients</div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     })()}
                   </div>
                   {/* Quantity */}
-                  <div>
+                  <div className="col-span-4">
                     <label className="text-[8px] text-slate-500 uppercase font-bold block mb-1">Quantity</label>
                     <div className="flex items-center gap-1">
                       <button onClick={() => {
@@ -2487,17 +2320,24 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
                         });
                       }} className="w-6 h-7 rounded bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 flex items-center justify-center text-sm font-bold transition-all shrink-0">+</button>
                     </div>
-                    {allDB[newIng.name] && <span className="text-[7px] text-slate-500 mt-0.5 block text-center">per {allDB[newIng.name].unit}</span>}
                   </div>
-                  {/* Per-unit info */}
-                  <div>
-                    <label className="text-[8px] text-slate-500 uppercase font-bold block mb-1">Per Unit</label>
-                    <div className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-400">
-                      {allDB[newIng.name] ? allDB[newIng.name].unit : 'Custom'}
-                    </div>
+                  {/* Unit Type */}
+                  <div className="col-span-4">
+                    <label className="text-[8px] text-slate-500 uppercase font-bold block mb-1">Unit</label>
+                    <select value={(() => {
+                      const dbInfo = allDB[newIng.name];
+                      if (dbInfo) return dbInfo.unit;
+                      return 'gms';
+                    })()}
+                      onChange={() => {}}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-gym-accent/50">
+                      {['gms', 'kg', 'pcs', 'ml', 'ltr', 'cup', 'tbsp', 'tsp', 'scoop', 'slice', '100g', '1 pc', '1 scoop', '200ml', '10 pcs'].map(u => (
+                        <option key={u} value={u} className="bg-[#1e293b]">{u}</option>
+                      ))}
+                    </select>
                   </div>
                   {/* Category dropdown */}
-                  <div>
+                  <div className="col-span-4">
                     <label className="text-[8px] text-slate-500 uppercase font-bold block mb-1">Category</label>
                     <select value={newIng.category} onChange={e => setNewIng(p => ({ ...p, category: e.target.value }))}
                       className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-gym-accent/50">
@@ -2507,76 +2347,69 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
                     </select>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-x-3 gap-y-2 mb-2">
-                  {[
-                    { key: 'cal', label: 'Calories (kcal)', color: 'text-white', max: 1000 },
-                    { key: 'protein', label: 'Protein (g)', color: 'text-gym-accent', max: 100 },
-                    { key: 'carbs', label: 'Carbs (g)', color: 'text-gym-amber', max: 200 },
-                    { key: 'fats', label: 'Fat (g)', color: 'text-gym-rose', max: 100 },
-                    { key: 'fiber', label: 'Fiber (g)', color: 'text-emerald-400', max: 50 },
-                  ].map(f => (
-                    <div key={f.key}>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className={cn("text-[8px] uppercase font-bold", f.color)}>{f.label}</label>
-                        <span className={cn("text-[10px] font-bold", f.color)}>{(newIng as any)[f.key]}</span>
-                      </div>
-                      <input type="range" min={0} max={f.max} step={f.key === 'cal' ? 5 : 0.5}
-                        value={(newIng as any)[f.key]}
-                        onChange={e => setNewIng(p => ({ ...p, [f.key]: parseFloat(e.target.value) }))}
-                        className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-white/10 accent-gym-accent" />
-                    </div>
-                  ))}
-                </div>
-                <div className="grid grid-cols-2 gap-x-3 gap-y-2 mb-3">
-                  {[
-                    { key: 'sugar', label: 'Sugar (g)', color: 'text-orange-400', max: 100 },
-                    { key: 'sodium', label: 'Sodium (mg)', color: 'text-sky-400', max: 1000 },
-                    { key: 'potassium', label: 'Potassium (mg)', color: 'text-violet-400', max: 1000 },
-                    { key: 'calcium', label: 'Calcium (mg)', color: 'text-cyan-300', max: 1000 },
-                    { key: 'iron', label: 'Iron (mg)', color: 'text-red-400', max: 50 },
-                  ].map(f => (
-                    <div key={f.key}>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className={cn("text-[8px] uppercase font-bold", f.color)}>{f.label}</label>
-                        <span className={cn("text-[10px] font-bold", f.color)}>{(newIng as any)[f.key]}</span>
-                      </div>
-                      <input type="range" min={0} max={f.max} step={f.key === 'sodium' || f.key === 'potassium' || f.key === 'calcium' ? 5 : 0.5}
-                        value={(newIng as any)[f.key]}
-                        onChange={e => setNewIng(p => ({ ...p, [f.key]: parseFloat(e.target.value) }))}
-                        className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-white/10 accent-gym-accent" />
-                    </div>
-                  ))}
-                </div>
-                {/* Dynamic nutrient fields */}
-                {/* Custom Nutrient Types with manage controls */}
-                <div className="mb-3">
-                  {customNutrientTypes.length > 0 && (
-                    <div className="grid grid-cols-2 gap-x-3 gap-y-2 mb-2">
-                      {customNutrientTypes.map(nt => (
-                        <div key={nt.id} className="group/nt relative">
-                          <div className="flex items-center justify-between mb-1">
-                            <label className={cn("text-[8px] uppercase font-bold", nt.color)}>{nt.name} ({nt.unit})</label>
-                            <div className="flex items-center gap-1">
-                              <span className={cn("text-[10px] font-bold", nt.color)}>{newIng[nt.id] ?? 0}</span>
-                              <button onClick={() => onDeleteNutrientType(nt.id)}
-                                className="opacity-0 group-hover/nt:opacity-100 p-0.5 rounded text-slate-600 hover:text-gym-rose transition-all" title={`Remove ${nt.name}`}>
-                                <X size={9} />
-                              </button>
+                {newIng.name.trim().length > 0 && (() => {
+                  // Dynamic max: at least 2x the current value, with sensible minimums
+                  const dynMax = (key: string, baseMax: number) => {
+                    const val = (newIng as any)[key] || 0;
+                    return Math.max(baseMax, Math.ceil(val * 2 / 10) * 10);
+                  };
+                  const allFields = [
+                    { key: 'cal', label: 'Calories (kcal)', color: 'text-white', baseMax: 500, step: 5 },
+                    { key: 'protein', label: 'Protein (g)', color: 'text-gym-accent', baseMax: 50, step: 0.5 },
+                    { key: 'carbs', label: 'Carbs (g)', color: 'text-gym-amber', baseMax: 80, step: 0.5 },
+                    { key: 'fats', label: 'Fat (g)', color: 'text-gym-rose', baseMax: 50, step: 0.5 },
+                    { key: 'fiber', label: 'Fiber (g)', color: 'text-emerald-400', baseMax: 20, step: 0.5 },
+                    { key: 'sugar', label: 'Sugar (g)', color: 'text-orange-400', baseMax: 30, step: 0.5 },
+                    { key: 'sodium', label: 'Sodium (mg)', color: 'text-sky-400', baseMax: 200, step: 5 },
+                    { key: 'potassium', label: 'Potassium (mg)', color: 'text-violet-400', baseMax: 500, step: 5 },
+                    { key: 'calcium', label: 'Calcium (mg)', color: 'text-cyan-300', baseMax: 300, step: 5 },
+                    { key: 'iron', label: 'Iron (mg)', color: 'text-red-400', baseMax: 20, step: 0.5 },
+                  ];
+                  return (
+                    <div className="grid grid-cols-3 gap-x-3 gap-y-2 mb-3">
+                      {allFields.map(f => {
+                        const val = (newIng as any)[f.key] || 0;
+                        const max = dynMax(f.key, f.baseMax);
+                        const pct = max > 0 ? Math.round((val / max) * 100) : 0;
+                        return (
+                          <div key={f.key}>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className={cn("text-[8px] uppercase font-bold", f.color)}>{f.label}</label>
+                              <span className={cn("text-[10px] font-bold", f.color)}>{val}</span>
+                            </div>
+                            <div className="relative">
+                              <div className="relative h-1.5 rounded-full bg-white/10 overflow-hidden">
+                                {val > 0 && <div className="absolute left-0 top-0 h-full rounded-full transition-all duration-300" style={{ width: `${pct}%`, background: f.color.includes('white') ? 'rgba(255,255,255,0.4)' : f.color.includes('accent') ? '#10B981' : f.color.includes('amber') ? '#F59E0B' : f.color.includes('rose') ? '#F43F5E' : f.color.includes('sky') ? '#38BDF8' : f.color.includes('violet') ? '#A78BFA' : f.color.includes('emerald') ? '#34D399' : f.color.includes('orange') ? '#FB923C' : f.color.includes('cyan') ? '#67E8F9' : f.color.includes('red') ? '#F87171' : '#10B981' }} />}
+                              </div>
+                              <input type="range" min={0} max={max} step={f.step}
+                                value={val}
+                                onChange={e => setNewIng(p => ({ ...p, [f.key]: parseFloat(e.target.value) }))}
+                                className="absolute inset-0 w-full h-1.5 opacity-0 cursor-pointer" style={{ top: 0 }} />
+                              {val > 0 && <div className="text-[6px] text-slate-600 text-right mt-0.5">{val} / {max}</div>}
                             </div>
                           </div>
-                          <input type="range" min={0} max={1000} step={5}
-                            value={newIng[nt.id] ?? 0}
-                            onChange={e => setNewIng(p => ({ ...p, [nt.id]: parseFloat(e.target.value) }))}
-                            className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-white/10 accent-gym-secondary" />
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
-                  )}
-                  <button onClick={() => { setShowNutrientPopup(true); setPopupNutrient({ name: '', unit: 'mg', color: NUTRIENT_COLORS[(customNutrientTypes.length) % NUTRIENT_COLORS.length], maxValue: 1000, step: 5 }); setEditingNutrient(null); }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.03] border border-dashed border-white/10 text-[9px] font-semibold text-slate-400 hover:text-gym-secondary hover:border-gym-secondary/30 hover:bg-gym-secondary/5 transition-all">
-                    <Plus size={10} /> Add New Nutrient Type
-                  </button>
-                </div>
+                  );
+                })()}
+                {/* Dynamic nutrient fields */}
+                {newIng.name.trim().length > 0 && customNutrientTypes.length > 0 && (
+                  <div className="grid grid-cols-3 gap-x-3 gap-y-2 mb-3">
+                    {customNutrientTypes.map(nt => (
+                      <div key={nt.id}>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className={cn("text-[8px] uppercase font-bold", nt.color)}>{nt.name} ({nt.unit})</label>
+                          <span className={cn("text-[10px] font-bold", nt.color)}>{newIng[nt.id] ?? 0}</span>
+                        </div>
+                        <input type="range" min={0} max={1000} step={5}
+                          value={newIng[nt.id] ?? 0}
+                          onChange={e => setNewIng(p => ({ ...p, [nt.id]: parseFloat(e.target.value) }))}
+                          className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-white/10 accent-gym-secondary" />
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {/* Live Nutrient Preview - only shows non-zero nutrients */}
                 {(() => {
                   const preview = [
@@ -2621,16 +2454,32 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
                     className="flex-1 py-2 bg-white/5 border border-white/10 rounded-lg text-xs font-medium text-slate-400 hover:bg-white/10 transition-all">Cancel</button>
                   <button
                     onClick={() => {
-                      const extras: Record<string, number> = {};
-                      customNutrientTypes.forEach(nt => { extras[nt.id] = parseFloat(newIng[nt.id]) || 0; });
-                      const dbInfo = allDB[newIng.name];
                       const q = parseFloat(newIng.unit) || 1;
-                      const savedUnit = dbInfo ? (q > 1 ? `${q} × ${dbInfo.unit}` : dbInfo.unit) : `${q} serving`;
-                      const info: NutritionInfo = { unit: savedUnit, cal: newIng.cal, protein: newIng.protein, carbs: newIng.carbs, fats: newIng.fats, sodium: newIng.sodium, potassium: newIng.potassium, fiber: newIng.fiber, sugar: newIng.sugar, calcium: newIng.calcium, iron: newIng.iron, category: newIng.category, extras: Object.keys(extras).length > 0 ? extras : undefined };
+                      const dbInfo = allDB[newIng.name];
+                      // Store per-unit nutrition (divide by qty so calculator can multiply correctly)
+                      const perUnit = (v: number) => q > 1 ? +(v / q).toFixed(2) : v;
+                      const extras: Record<string, number> = {};
+                      customNutrientTypes.forEach(nt => { extras[nt.id] = perUnit(parseFloat(newIng[nt.id]) || 0); });
+                      const savedUnit = dbInfo ? dbInfo.unit : '1 serving';
+                      const info: NutritionInfo = {
+                        unit: savedUnit, category: newIng.category,
+                        cal: perUnit(newIng.cal), protein: perUnit(newIng.protein), carbs: perUnit(newIng.carbs), fats: perUnit(newIng.fats),
+                        sodium: perUnit(newIng.sodium), potassium: perUnit(newIng.potassium), fiber: perUnit(newIng.fiber),
+                        sugar: perUnit(newIng.sugar), calcium: perUnit(newIng.calcium), iron: perUnit(newIng.iron),
+                        extras: Object.keys(extras).length > 0 ? extras : undefined
+                      };
                       if (editingItem) {
                         onUpdateCustom(editingItem, info);
                       } else if (newIng.name.trim()) {
                         onAddCustom(newIng.name.trim(), info);
+                        // Auto-add to calculator so user sees nutrients immediately
+                        setCalcItems(prev => {
+                          const name = newIng.name.trim();
+                          const existing = prev.find(x => x.name === name);
+                          if (existing) return prev.map(x => x.name === name ? { ...x, qty: q } : x);
+                          return [...prev, { name, qty: q }];
+                        });
+                        if (!showCalc) setShowCalc(true);
                       }
                       setShowAddForm(false);
                       setEditingItem(null);
@@ -2645,652 +2494,506 @@ const IngredientMasterPanel = ({ onClose, customIngredients, onAddCustom, onUpda
           )}
         </AnimatePresence>
 
-        {/* Table */}
-        <div className="flex-1 overflow-auto px-5 pt-3 pb-5">
-          {/* Table header */}
-          <div className="flex items-center gap-1 py-2 px-3 mb-1 sticky top-0 bg-[#0f1729] z-10 border-b border-white/10 min-w-[900px]" style={{ minWidth: 900 + customNutrientTypes.length * 48 }}>
-            <SortHeader field="name" label="Ingredient" w="w-[140px] shrink-0" />
-            <span className="text-[8px] font-bold text-slate-500 uppercase w-12 text-center shrink-0">Unit</span>
-            <SortHeader field="cal" label="Cal" w="w-11 justify-center shrink-0" />
-            <SortHeader field="protein" label="Prot" w="w-11 justify-center shrink-0" />
-            <SortHeader field="carbs" label="Carb" w="w-11 justify-center shrink-0" />
-            <SortHeader field="fats" label="Fat" w="w-11 justify-center shrink-0" />
-            <SortHeader field="sodium" label="Na" w="w-11 justify-center shrink-0" />
-            <SortHeader field="potassium" label="K" w="w-11 justify-center shrink-0" />
-            <SortHeader field="fiber" label="Fiber" w="w-11 justify-center shrink-0" />
-            <SortHeader field="sugar" label="Sugar" w="w-11 justify-center shrink-0" />
-            <SortHeader field="calcium" label="Ca" w="w-11 justify-center shrink-0" />
-            <SortHeader field="iron" label="Fe" w="w-11 justify-center shrink-0" />
-            {customNutrientTypes.map(nt => (
-              <React.Fragment key={nt.id}><SortHeader field={nt.id} label={nt.name.length > 6 ? nt.name.slice(0, 5) + '.' : nt.name} w="w-12 justify-center shrink-0" /></React.Fragment>
-            ))}
-            <span className="w-14 shrink-0" />
-          </div>
-          {/* Table rows */}
-          <div className="min-w-[900px]" style={{ minWidth: 900 + customNutrientTypes.length * 48 }}>
-          {entries.map((item, i) => (
-            <motion.div key={item.name}
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-              className={cn("flex items-center gap-1 py-2 px-3 rounded-lg transition-all group",
-                i % 2 === 0 ? 'bg-white/[0.02]' : '', 'hover:bg-white/5')}>
-              <div className="w-[140px] shrink-0 flex items-center gap-1.5 min-w-0">
-                <span className="text-[10px] font-semibold text-white truncate">{item.name}</span>
-                {item.isCustom && (
-                  <span className="text-[6px] font-bold px-1 py-0.5 rounded bg-gym-secondary/10 border border-gym-secondary/20 text-gym-secondary uppercase shrink-0">C</span>
-                )}
-              </div>
-              <span className="text-[9px] text-slate-500 w-12 text-center shrink-0">{item.unit}</span>
-              <span className="text-[9px] font-bold text-white w-11 text-center shrink-0">{item.cal}</span>
-              <span className="text-[9px] font-bold text-gym-accent w-11 text-center shrink-0">{item.protein}g</span>
-              <span className="text-[9px] font-bold text-gym-amber w-11 text-center shrink-0">{item.carbs}g</span>
-              <span className="text-[9px] font-bold text-gym-rose w-11 text-center shrink-0">{item.fats}g</span>
-              <span className="text-[9px] text-sky-400 w-11 text-center shrink-0">{item.sodium}</span>
-              <span className="text-[9px] text-violet-400 w-11 text-center shrink-0">{item.potassium}</span>
-              <span className="text-[9px] text-emerald-400 w-11 text-center shrink-0">{item.fiber}g</span>
-              <span className="text-[9px] text-orange-400 w-11 text-center shrink-0">{item.sugar}g</span>
-              <span className="text-[9px] text-cyan-300 w-11 text-center shrink-0">{item.calcium}</span>
-              <span className="text-[9px] text-red-400 w-11 text-center shrink-0">{item.iron}</span>
+          </div>{/* END tools panels */}
+
+          {/* Full-width Table */}
+          <GlassCard className="flex-1 overflow-hidden !p-0 flex flex-col">
+            {/* Table header */}
+            <div className="flex items-center gap-1 py-1.5 px-3 bg-white/[0.03] border-b border-white/8">
+              <SortHeader field="name" label="Ingredient" w="w-[150px] shrink-0" />
+              <span className="text-[8px] font-bold text-slate-500 uppercase w-12 text-center shrink-0">Unit</span>
+              <SortHeader field="cal" label="Cal" w="w-11 justify-center shrink-0" />
+              <SortHeader field="protein" label="Prot" w="w-11 justify-center shrink-0" />
+              <SortHeader field="carbs" label="Carb" w="w-11 justify-center shrink-0" />
+              <SortHeader field="fats" label="Fat" w="w-11 justify-center shrink-0" />
+              <SortHeader field="sodium" label="Na" w="w-11 justify-center shrink-0" />
+              <SortHeader field="potassium" label="K" w="w-11 justify-center shrink-0" />
+              <SortHeader field="fiber" label="Fiber" w="w-11 justify-center shrink-0" />
+              <SortHeader field="sugar" label="Sugar" w="w-11 justify-center shrink-0" />
+              <SortHeader field="calcium" label="Ca" w="w-11 justify-center shrink-0" />
+              <SortHeader field="iron" label="Fe" w="w-11 justify-center shrink-0" />
               {customNutrientTypes.map(nt => (
-                <span key={nt.id} className={cn("text-[9px] font-medium w-12 text-center shrink-0", nt.color)}>{item.extras?.[nt.id] ?? 0}</span>
+                <React.Fragment key={nt.id}><SortHeader field={nt.id} label={nt.name.length > 6 ? nt.name.slice(0, 5) + '.' : nt.name} w="w-12 justify-center shrink-0" /></React.Fragment>
               ))}
-              <div className="w-14 shrink-0 flex justify-end relative">
-                <button onClick={(e) => { e.stopPropagation(); setOpenDropdown(openDropdown === item.name ? null : item.name); }}
-                  className="p-1 rounded text-slate-500 hover:text-white hover:bg-white/10 transition-all opacity-0 group-hover:opacity-100">
-                  <MoreVertical size={13} />
-                </button>
-                {openDropdown === item.name && (
-                  <>
-                    <div className="fixed inset-0 z-30" onClick={() => setOpenDropdown(null)} />
-                    <div className="absolute right-0 top-7 z-40 bg-[#1e293b] border border-white/10 rounded-xl shadow-2xl py-1 min-w-[140px] overflow-hidden">
-                      <button onClick={() => {
-                        const extrasObj: Record<string, number> = {};
-                        customNutrientTypes.forEach(nt => { extrasObj[nt.id] = item.extras?.[nt.id] ?? 0; });
-                        const qMatch = item.unit.match(/^(\d+\.?\d*)\s*×/);
-                        if (item.isCustom) {
+              <span className="w-14 shrink-0" />
+            </div>
+            {/* Table rows */}
+            <div className="flex-1 overflow-y-auto">
+              {pagedEntries.map((item, i) => (
+                <div key={item.name}
+                  className={cn("flex items-center gap-1 py-1.5 px-3 transition-all group border-b border-white/5",
+                    i % 2 === 0 ? 'bg-white/[0.02]' : '', 'hover:bg-white/[0.04]')}>
+                  <div className="w-[150px] shrink-0 flex items-center gap-1.5 min-w-0">
+                    <span className="text-[10px] font-semibold text-white truncate">{item.name}</span>
+                    {item.isCustom && (
+                      <span className="text-[6px] font-bold px-1 py-0.5 rounded bg-gym-secondary/10 border border-gym-secondary/20 text-gym-secondary uppercase shrink-0">C</span>
+                    )}
+                  </div>
+                  <span className="text-[9px] text-slate-500 w-12 text-center shrink-0">{item.unit}</span>
+                  <span className="text-[9px] font-bold text-white w-11 text-center shrink-0">{item.cal}</span>
+                  <span className="text-[9px] font-bold text-gym-accent w-11 text-center shrink-0">{item.protein}g</span>
+                  <span className="text-[9px] font-bold text-gym-amber w-11 text-center shrink-0">{item.carbs}g</span>
+                  <span className="text-[9px] font-bold text-gym-rose w-11 text-center shrink-0">{item.fats}g</span>
+                  <span className="text-[9px] text-sky-400 w-11 text-center shrink-0">{item.sodium}</span>
+                  <span className="text-[9px] text-violet-400 w-11 text-center shrink-0">{item.potassium}</span>
+                  <span className="text-[9px] text-emerald-400 w-11 text-center shrink-0">{item.fiber}g</span>
+                  <span className="text-[9px] text-orange-400 w-11 text-center shrink-0">{item.sugar}g</span>
+                  <span className="text-[9px] text-cyan-300 w-11 text-center shrink-0">{item.calcium}</span>
+                  <span className="text-[9px] text-red-400 w-11 text-center shrink-0">{item.iron}</span>
+                  {customNutrientTypes.map(nt => (
+                    <span key={nt.id} className={cn("text-[9px] font-medium w-12 text-center shrink-0", nt.color)}>{item.extras?.[nt.id] ?? 0}</span>
+                  ))}
+                  <div className="w-14 shrink-0 flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                    {item.isCustom && (
+                      <>
+                        <button onClick={() => {
                           setEditingItem(item.name);
-                          setNewIng({ name: item.name, unit: qMatch ? qMatch[1] : '1', cal: item.cal, protein: item.protein, carbs: item.carbs, fats: item.fats, sodium: item.sodium, potassium: item.potassium, fiber: item.fiber, sugar: item.sugar, calcium: item.calcium, iron: item.iron, category: item.category, ...extrasObj });
-                        } else {
-                          setEditingItem(null);
+                          const extrasObj: Record<string, number> = {};
+                          customNutrientTypes.forEach(nt => { extrasObj[nt.id] = item.extras?.[nt.id] ?? 0; });
                           setNewIng({ name: item.name, unit: '1', cal: item.cal, protein: item.protein, carbs: item.carbs, fats: item.fats, sodium: item.sodium, potassium: item.potassium, fiber: item.fiber, sugar: item.sugar, calcium: item.calcium, iron: item.iron, category: item.category, ...extrasObj });
-                        }
-                        setShowAddForm(true);
-                        setOpenDropdown(null);
-                      }} className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 text-slate-300 hover:bg-white/10 hover:text-white transition-all">
-                        <Edit3 size={12} className="text-gym-accent" /> {item.isCustom ? 'Edit Ingredient' : 'Edit as Custom'}
-                      </button>
-                      <button onClick={() => {
-                        setEditingItem(null);
-                        const extrasObj: Record<string, number> = {};
-                        customNutrientTypes.forEach(nt => { extrasObj[nt.id] = item.extras?.[nt.id] ?? 0; });
-                        setNewIng({ name: '', unit: '1', cal: item.cal, protein: item.protein, carbs: item.carbs, fats: item.fats, sodium: item.sodium, potassium: item.potassium, fiber: item.fiber, sugar: item.sugar, calcium: item.calcium, iron: item.iron, category: item.category, ...extrasObj });
-                        setShowAddForm(true);
-                        setOpenDropdown(null);
-                      }} className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 text-slate-300 hover:bg-white/10 hover:text-white transition-all">
-                        <Copy size={12} className="text-gym-secondary" /> Duplicate
-                      </button>
-                      {item.isCustom && (
-                        <button onClick={() => { onDeleteCustom(item.name); setOpenDropdown(null); }}
-                          className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 text-slate-300 hover:bg-gym-rose/10 hover:text-gym-rose transition-all border-t border-white/5">
-                          <Trash2 size={12} className="text-gym-rose" /> Delete
+                          setShowAddForm(true);
+                        }} className="p-1 rounded text-slate-500 hover:text-gym-accent hover:bg-white/5 transition-all" title="Edit">
+                          <Pencil size={11} />
                         </button>
-                      )}
-                    </div>
-                  </>
-                )}
+                        <button onClick={() => onDeleteCustom(item.name)}
+                          className="p-1 rounded text-slate-500 hover:text-gym-rose hover:bg-gym-rose/5 transition-all" title="Delete">
+                          <Trash2 size={11} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {entries.length === 0 && (
+                <div className="text-center py-8">
+                  <Scale size={28} className="mx-auto text-slate-600 mb-2" />
+                  <p className="text-slate-400 text-xs">No ingredients found.</p>
+                </div>
+              )}
+            </div>
+            {/* Pagination */}
+            {totalIngPages > 1 && (
+              <div className="flex items-center justify-between px-3 py-1.5 border-t border-white/5 bg-white/[0.02] shrink-0">
+                <span className="text-[10px] text-slate-500">
+                  Showing {(ingPage - 1) * ING_PER_PAGE + 1}–{Math.min(ingPage * ING_PER_PAGE, entries.length)} of {entries.length}
+                </span>
+                <div className="flex gap-1">
+                  <button onClick={() => setIngPage(1)} disabled={ingPage === 1} className="px-1.5 py-0.5 rounded text-[9px] text-slate-400 hover:text-white disabled:opacity-30 bg-white/5 transition-all">First</button>
+                  <button onClick={() => setIngPage(p => Math.max(1, p - 1))} disabled={ingPage === 1} className="px-1.5 py-0.5 rounded text-[9px] text-slate-400 hover:text-white disabled:opacity-30 bg-white/5 transition-all">Prev</button>
+                  {Array.from({ length: totalIngPages }, (_, i) => i + 1).filter(p => p === 1 || p === totalIngPages || Math.abs(p - ingPage) <= 2).map(p => (
+                    <button key={p} onClick={() => setIngPage(p)}
+                      className={cn("w-6 h-6 rounded text-[9px] font-bold transition-all",
+                        p === ingPage ? 'bg-gym-accent/20 text-gym-accent border border-gym-accent/30' : 'text-slate-400 hover:text-white bg-white/5')}>
+                      {p}
+                    </button>
+                  ))}
+                  <button onClick={() => setIngPage(p => Math.min(totalIngPages, p + 1))} disabled={ingPage === totalIngPages} className="px-1.5 py-0.5 rounded text-[9px] text-slate-400 hover:text-white disabled:opacity-30 bg-white/5 transition-all">Next</button>
+                  <button onClick={() => setIngPage(totalIngPages)} disabled={ingPage === totalIngPages} className="px-1.5 py-0.5 rounded text-[9px] text-slate-400 hover:text-white disabled:opacity-30 bg-white/5 transition-all">Last</button>
+                </div>
               </div>
-            </motion.div>
-          ))}
+            )}
+          </GlassCard>
+        </div>{/* END main content */}
+      </div>{/* END relative z-10 */}
+    </div>
+  );
+};
+
+// ─── Client Diet Builder Panel ────────────────────────────────────────────
+const DIET_CLIENTS = [
+  { id: 1, name: 'Alex Johnson', goal: 'Muscle Gain' as const, weight: '82kg', height: '5\'11"', age: 28, timing: 'Morning (6AM-10AM)', bodyTarget: '78kg Lean', status: 'active' },
+  { id: 2, name: 'Sarah Kim', goal: 'Weight Loss' as const, weight: '68kg', height: '5\'5"', age: 25, timing: 'Evening (5PM-8PM)', bodyTarget: '60kg Lean', status: 'active' },
+  { id: 3, name: 'Mike Torres', goal: 'Strength' as const, weight: '90kg', height: '6\'0"', age: 32, timing: 'Morning (6AM-10AM)', bodyTarget: '88kg Muscle', status: 'active' },
+  { id: 4, name: 'Lisa Chen', goal: 'Cardio' as const, weight: '55kg', height: '5\'3"', age: 22, timing: 'Morning (7AM-9AM)', bodyTarget: '54kg Fit', status: 'active' },
+  { id: 5, name: 'Raj Patel', goal: 'Muscle Gain' as const, weight: '75kg', height: '5\'9"', age: 27, timing: 'Evening (6PM-9PM)', bodyTarget: '80kg Bulk', status: 'active' },
+  { id: 6, name: 'Emma Wilson', goal: 'Weight Loss' as const, weight: '72kg', height: '5\'6"', age: 30, timing: 'Morning (6AM-8AM)', bodyTarget: '63kg Lean', status: 'active' },
+];
+
+const CLIENT_DIET_RANGES: Record<string, { calRange: [number, number]; proteinRange: [number, number]; carbsRange: [number, number]; fatsRange: [number, number]; suggestedIngredients: string[] }> = {
+  'Weight Loss': { calRange: [1400, 1800], proteinRange: [100, 150], carbsRange: [80, 120], fatsRange: [30, 50], suggestedIngredients: ['Chicken Breast', 'Egg Whites', 'Broccoli', 'Spinach', 'Green Tea', 'Cucumber', 'Apple', 'Oats', 'Greek Yogurt', 'Cod Fish', 'Lettuce', 'Bell Peppers'] },
+  'Muscle Gain': { calRange: [2500, 3200], proteinRange: [180, 250], carbsRange: [250, 350], fatsRange: [60, 100], suggestedIngredients: ['Chicken Breast', 'Eggs', 'Brown Rice', 'Oats', 'Banana', 'Whey Protein', 'Sweet Potato', 'Peanut Butter', 'Greek Yogurt', 'Almonds', 'Whole Milk', 'Beef Steak'] },
+  'Cardio': { calRange: [2000, 2400], proteinRange: [100, 150], carbsRange: [200, 280], fatsRange: [50, 70], suggestedIngredients: ['Banana', 'Oats', 'Brown Rice', 'Chicken Breast', 'Sweet Potato', 'Dates', 'Apple', 'Honey', 'Beetroot', 'Almonds', 'Blueberries', 'Quinoa'] },
+  'Strength': { calRange: [2800, 3500], proteinRange: [200, 280], carbsRange: [280, 380], fatsRange: [70, 110], suggestedIngredients: ['Beef Steak', 'Eggs', 'Brown Rice', 'Sweet Potato', 'Chicken Breast', 'Salmon', 'Peanut Butter', 'Cottage Cheese', 'Casein Protein', 'Whole Milk', 'Bread', 'Avocado'] },
+  'Detox': { calRange: [1200, 1600], proteinRange: [60, 90], carbsRange: [100, 150], fatsRange: [30, 50], suggestedIngredients: ['Spinach', 'Cucumber', 'Lemon', 'Green Tea', 'Apple', 'Beetroot', 'Broccoli', 'Amla', 'Blueberries', 'Watermelon', 'Mint', 'Turmeric'] },
+  'Wellness': { calRange: [1800, 2200], proteinRange: [80, 120], carbsRange: [180, 250], fatsRange: [50, 70], suggestedIngredients: ['Oats', 'Banana', 'Greek Yogurt', 'Almonds', 'Chicken Breast', 'Brown Rice', 'Spinach', 'Apple', 'Salmon', 'Avocado', 'Honey', 'Whole Milk'] },
+};
+
+const ClientDietBuilder = ({ onClose, customIngredients }: {
+  onClose: () => void;
+  customIngredients: Record<string, NutritionInfo>;
+}) => {
+  const [step, setStep] = useState(1);
+  const [selectedClient, setSelectedClient] = useState<typeof DIET_CLIENTS[0] | null>(null);
+  const [clientSearch, setClientSearch] = useState('');
+  const [dietMeals, setDietMeals] = useState<{ tag: string; ingredients: { name: string; qty: number }[] }[]>([]);
+  const [addingMealTag, setAddingMealTag] = useState('Breakfast');
+  const [ingSearchByMeal, setIngSearchByMeal] = useState<Record<number, string>>({});
+  const [activeMealSearch, setActiveMealSearch] = useState<number | null>(null);
+  const [savedMessage, setSavedMessage] = useState('');
+
+  const allDB: Record<string, NutritionInfo> = { ...NUTRITION_DB, ...customIngredients };
+  const goalRange = selectedClient ? CLIENT_DIET_RANGES[selectedClient.goal] || CLIENT_DIET_RANGES['Wellness'] : null;
+
+  const totalNutrition = useMemo(() => {
+    let cal = 0, protein = 0, carbs = 0, fats = 0;
+    dietMeals.forEach(meal => {
+      meal.ingredients.forEach(ing => {
+        const info = allDB[ing.name];
+        if (info) {
+          cal += Math.round(info.cal * ing.qty);
+          protein += +(info.protein * ing.qty).toFixed(1);
+          carbs += +(info.carbs * ing.qty).toFixed(1);
+          fats += +(info.fats * ing.qty).toFixed(1);
+        }
+      });
+    });
+    return { cal: Math.round(cal), protein: Math.round(protein), carbs: Math.round(carbs), fats: Math.round(fats) };
+  }, [dietMeals, allDB]);
+
+  const mealNutrition = (meal: { ingredients: { name: string; qty: number }[] }) => {
+    let cal = 0, protein = 0, carbs = 0, fats = 0;
+    meal.ingredients.forEach(ing => {
+      const info = allDB[ing.name];
+      if (info) { cal += Math.round(info.cal * ing.qty); protein += +(info.protein * ing.qty).toFixed(1); carbs += +(info.carbs * ing.qty).toFixed(1); fats += +(info.fats * ing.qty).toFixed(1); }
+    });
+    return { cal: Math.round(cal), protein: Math.round(protein), carbs: Math.round(carbs), fats: Math.round(fats) };
+  };
+
+  const isInRange = (val: number, range: [number, number]) => val >= range[0] && val <= range[1];
+
+  const filteredClients = DIET_CLIENTS.filter(c => c.name.toLowerCase().includes(clientSearch.toLowerCase()));
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+      <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }}
+        onClick={e => e.stopPropagation()}
+        className="w-full max-w-4xl max-h-[90vh] bg-[#0F172A] border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+
+        {/* Header */}
+        <div className="px-5 py-3 bg-gradient-to-r from-gym-rose/80 via-pink-600/70 to-gym-secondary/80 shrink-0">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2 text-[9px] text-white/70 uppercase tracking-widest font-bold">
+                <UserPlus size={12} /> Client Diet Builder
+                <span className="ml-2 px-1.5 py-0.5 rounded bg-white/10 text-white text-[8px]">Step {step}/4</span>
+              </div>
+              <h2 className="text-lg font-black text-white mt-0.5">
+                {step === 1 ? 'Select Client' : step === 2 ? `${selectedClient?.name} — Diet Suggestions` : step === 3 ? 'Build Meals' : 'Review & Save'}
+              </h2>
+            </div>
+            <button onClick={onClose} className="p-1.5 rounded-lg bg-white/10 text-white hover:bg-white/20 transition-all"><X size={16} /></button>
           </div>
-          {entries.length === 0 && (
-            <div className="text-center py-12">
-              <Scale size={36} className="mx-auto text-slate-600 mb-3" />
-              <p className="text-slate-400 text-sm">No ingredients found</p>
+          {/* Progress bar */}
+          <div className="flex gap-1 mt-2">
+            {[1, 2, 3, 4].map(s => (
+              <div key={s} className={cn("h-1 flex-1 rounded-full transition-all", s <= step ? 'bg-white' : 'bg-white/20')} />
+            ))}
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-5">
+          {/* Step 1: Select Client */}
+          {step === 1 && (
+            <div>
+              <div className="relative mb-4">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input type="text" value={clientSearch} onChange={e => setClientSearch(e.target.value)}
+                  placeholder="Search client by name..."
+                  className="w-full bg-white/5 border border-white/10 rounded-xl pl-9 pr-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-gym-rose/50" />
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {filteredClients.map(client => (
+                  <button key={client.id} onClick={() => { setSelectedClient(client); setStep(2); }}
+                    className={cn("text-left p-4 rounded-xl border transition-all hover:scale-[1.02]",
+                      selectedClient?.id === client.id ? 'bg-gym-rose/10 border-gym-rose/40' : 'bg-white/[0.03] border-white/10 hover:bg-white/5')}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gym-accent to-gym-secondary flex items-center justify-center text-white text-xs font-bold">
+                        {client.name.split(' ').map(n => n[0]).join('')}
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-white">{client.name}</p>
+                        <p className="text-[9px] text-slate-500">{client.goal}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 text-[9px] text-slate-400">
+                      <span>{client.weight}</span>
+                      <span>{client.height}</span>
+                      <span>Age {client.age}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
-          {/* Category summary */}
-          <div className="mt-6 pt-4 border-t border-white/5">
-            <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Category Summary</h4>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              {Object.entries(INGREDIENT_CATEGORIES).map(([cat, items]) => (
-                <div key={cat} className="p-2.5 rounded-xl bg-white/3 border border-white/5">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase block">{cat}</span>
-                  <span className="text-lg font-bold text-white">{items.length + Object.values(customIngredients).filter(c => c.category === cat).length}</span>
-                  <span className="text-[8px] text-slate-500 block">ingredients</span>
+          {/* Step 2: Client Goals + Diet Suggestions */}
+          {step === 2 && selectedClient && goalRange && (
+            <div>
+              {/* Client summary */}
+              <div className="flex items-center gap-4 p-4 rounded-xl bg-white/[0.03] border border-white/10 mb-4">
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-gym-accent to-gym-secondary flex items-center justify-center text-white text-sm font-bold shrink-0">
+                  {selectedClient.name.split(' ').map(n => n[0]).join('')}
                 </div>
-              ))}
+                <div className="flex-1 grid grid-cols-3 md:grid-cols-6 gap-3">
+                  {[
+                    { label: 'Goal', value: selectedClient.goal, color: 'text-gym-rose' },
+                    { label: 'Weight', value: selectedClient.weight, color: 'text-white' },
+                    { label: 'Height', value: selectedClient.height, color: 'text-white' },
+                    { label: 'Age', value: selectedClient.age, color: 'text-white' },
+                    { label: 'Timing', value: selectedClient.timing, color: 'text-gym-amber' },
+                    { label: 'Target', value: selectedClient.bodyTarget, color: 'text-gym-accent' },
+                  ].map(s => (
+                    <div key={s.label}>
+                      <p className="text-[8px] text-slate-500 uppercase font-bold">{s.label}</p>
+                      <p className={cn("text-xs font-bold", s.color)}>{s.value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Recommended ranges */}
+              <h4 className="text-xs font-bold text-white mb-2 flex items-center gap-1.5"><Flame size={12} className="text-gym-amber" /> Recommended Daily Ranges for {selectedClient.goal}</h4>
+              <div className="grid grid-cols-4 gap-2 mb-4">
+                {[
+                  { label: 'Calories', range: goalRange.calRange, unit: 'kcal', color: 'text-white', bg: 'bg-white/10' },
+                  { label: 'Protein', range: goalRange.proteinRange, unit: 'g', color: 'text-gym-accent', bg: 'bg-gym-accent/10' },
+                  { label: 'Carbs', range: goalRange.carbsRange, unit: 'g', color: 'text-gym-amber', bg: 'bg-gym-amber/10' },
+                  { label: 'Fat', range: goalRange.fatsRange, unit: 'g', color: 'text-gym-rose', bg: 'bg-gym-rose/10' },
+                ].map(r => (
+                  <div key={r.label} className={cn("rounded-lg px-3 py-2 border border-white/5", r.bg)}>
+                    <p className={cn("text-[8px] uppercase font-bold mb-0.5", r.color)}>{r.label}</p>
+                    <p className={cn("text-sm font-extrabold", r.color)}>{r.range[0]} – {r.range[1]} <span className="text-[8px] font-normal opacity-60">{r.unit}</span></p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Suggested Ingredients */}
+              <h4 className="text-xs font-bold text-white mb-2 flex items-center gap-1.5"><Leaf size={12} className="text-gym-accent" /> Suggested Ingredients</h4>
+              <div className="flex flex-wrap gap-1.5 mb-4">
+                {goalRange.suggestedIngredients.map(name => {
+                  const info = allDB[name];
+                  return (
+                    <div key={name} className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/[0.03] border border-white/5 text-[9px]">
+                      <span className="font-semibold text-white">{name}</span>
+                      {info && <span className="text-slate-500">{info.cal}cal · {info.protein}p</span>}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <button onClick={() => { setDietMeals([{ tag: 'Breakfast', ingredients: [] }, { tag: 'Lunch', ingredients: [] }, { tag: 'Dinner', ingredients: [] }]); setStep(3); }}
+                className="w-full py-2.5 bg-gym-rose text-white rounded-xl font-bold text-sm hover:bg-gym-rose/80 transition-all">
+                Start Building Diet →
+              </button>
             </div>
-          </div>
-        </div>
+          )}
 
-        </div>
-        {/* End Main Content Area */}
-
-        {/* Dish Builder Popup Modal */}
-        <AnimatePresence>
-          {showDishBuilder && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[200] flex items-center justify-center">
-              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowDishBuilder(false)} />
-              <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
-                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                className="relative z-10 bg-[#0f1729] border border-white/10 rounded-2xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden max-h-[90vh] flex flex-col">
-                {/* Popup Header */}
-                <div className="bg-gradient-to-r from-purple-600 via-fuchsia-600 to-pink-500 px-6 py-4 flex items-center justify-between shrink-0">
-                  <div>
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <Sparkles size={16} className="text-white/80" />
-                      <span className="text-white/80 text-xs font-medium tracking-wide uppercase">Recipe Builder</span>
-                    </div>
-                    <h3 className="text-lg font-extrabold text-white">{editingDishIdx !== null ? 'Edit Recipe' : 'Create New Recipe'}</h3>
+          {/* Step 3: Build Meals */}
+          {step === 3 && selectedClient && goalRange && (
+            <div>
+              {/* Daily totals bar with range indicators */}
+              <div className="grid grid-cols-4 gap-2 mb-4">
+                {[
+                  { label: 'Calories', val: totalNutrition.cal, range: goalRange.calRange, unit: 'kcal', color: 'text-white' },
+                  { label: 'Protein', val: totalNutrition.protein, range: goalRange.proteinRange, unit: 'g', color: 'text-gym-accent' },
+                  { label: 'Carbs', val: totalNutrition.carbs, range: goalRange.carbsRange, unit: 'g', color: 'text-gym-amber' },
+                  { label: 'Fat', val: totalNutrition.fats, range: goalRange.fatsRange, unit: 'g', color: 'text-gym-rose' },
+                ].map(n => (
+                  <div key={n.label} className={cn("rounded-lg px-3 py-2 border transition-all",
+                    isInRange(n.val, n.range) ? 'border-gym-accent/30 bg-gym-accent/5' : n.val > n.range[1] ? 'border-gym-rose/30 bg-gym-rose/5' : 'border-white/10 bg-white/[0.03]')}>
+                    <p className={cn("text-[8px] uppercase font-bold", n.color)}>{n.label}</p>
+                    <p className={cn("text-lg font-extrabold", isInRange(n.val, n.range) ? 'text-gym-accent' : n.val > n.range[1] ? 'text-gym-rose' : n.color)}>
+                      {n.val}<span className="text-[8px] font-normal opacity-60 ml-0.5">{n.unit}</span>
+                    </p>
+                    <p className="text-[7px] text-slate-500">{n.range[0]}–{n.range[1]} {n.unit}</p>
                   </div>
-                  <button onClick={() => setShowDishBuilder(false)}
-                    className="text-white/60 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-1.5 transition-all">
-                    <X size={16} />
-                  </button>
-                </div>
+                ))}
+              </div>
 
-                {/* Popup Body */}
-                <div className="px-6 py-5 overflow-y-auto flex-1">
-                  {/* Dish Name, Meal Type & Goal */}
-                  <div className="grid grid-cols-4 gap-3 mb-4">
-                    <div className="col-span-2">
-                      <label className="text-[9px] text-slate-400 uppercase font-bold block mb-1.5">Recipe Name</label>
-                      <input type="text" value={dishName} onChange={e => setDishName(e.target.value)}
-                        placeholder="e.g. Protein Oatmeal, Grilled Chicken Salad..."
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-purple-500/50 transition-all" />
-                    </div>
-                    <div>
-                      <label className="text-[9px] text-slate-400 uppercase font-bold block mb-1.5">Meal Type</label>
-                      <select value={dishCategory} onChange={e => setDishCategory(e.target.value)}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-purple-500/50">
-                        {MEAL_CATEGORIES.map(c => (
-                          <option key={c} value={c} className="bg-[#1e293b]">{c}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[9px] text-slate-400 uppercase font-bold block mb-1.5">Goal Type</label>
-                      <select value={dishGoal} onChange={e => setDishGoal(e.target.value)}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-purple-500/50">
-                        {GOAL_TYPES.map(g => (
-                          <option key={g} value={g} className="bg-[#1e293b]">{g}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
+              {/* Meals */}
+              <div className="space-y-3 mb-4">
+                {dietMeals.map((meal, mIdx) => {
+                  const mn = mealNutrition(meal);
+                  return (
+                    <div key={mIdx} className="rounded-xl border border-white/10 bg-white/[0.02] overflow-hidden">
+                      <div className="flex items-center justify-between px-3 py-2 bg-white/[0.03] border-b border-white/5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-white">{meal.tag}</span>
+                          <span className="text-[9px] text-slate-500">{meal.ingredients.length} items · {mn.cal} cal</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-[8px]">
+                          <span className="text-gym-accent">{mn.protein}g P</span>
+                          <span className="text-gym-amber">{mn.carbs}g C</span>
+                          <span className="text-gym-rose">{mn.fats}g F</span>
+                          <button onClick={() => setDietMeals(p => p.filter((_, i) => i !== mIdx))} className="text-slate-600 hover:text-gym-rose ml-1"><X size={10} /></button>
+                        </div>
+                      </div>
 
-                  {/* Add Ingredients Search */}
-                  <div className="mb-4">
-                    <label className="text-[9px] text-slate-400 uppercase font-bold block mb-1.5">Add Ingredients</label>
-                    <div className="relative">
-                      <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                      <input type="text" value={dishSearch}
-                        onChange={e => { setDishSearch(e.target.value); setShowDishSuggestions(true); }}
-                        onFocus={() => setShowDishSuggestions(true)}
-                        onBlur={() => setTimeout(() => setShowDishSuggestions(false), 150)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter' && dishSearch.trim()) {
-                            const qm = dishSearch.match(/^(\d+\.?\d*)\s+(.+)/);
-                            const qty = qm ? parseFloat(qm[1]) : 1;
-                            const term = (qm ? qm[2] : dishSearch).trim();
-                            const match = Object.keys(allDB).find(n => n.toLowerCase() === term.toLowerCase())
-                              || Object.keys(allDB).find(n => n.toLowerCase().includes(term.toLowerCase()));
-                            if (match) {
-                              setDishItems(prev => {
-                                const existing = prev.find(x => x.name === match);
-                                if (existing) return prev.map(x => x.name === match ? { ...x, qty: x.qty + qty } : x);
-                                return [...prev, { name: match, qty }];
-                              });
-                              setDishSearch('');
-                              setShowDishSuggestions(false);
-                            }
-                          }
-                        }}
-                        placeholder="Type ingredient (e.g. 3 Eggs, Spinach, Olive Oil...)"
-                        className="w-full bg-white/5 border border-white/10 rounded-xl pl-9 pr-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-purple-500/50" />
-                      {showDishSuggestions && dishSearch.length >= 1 && (() => {
-                        const qm = dishSearch.match(/^(\d+\.?\d*)\s+(.+)/);
-                        const qty = qm ? parseFloat(qm[1]) : 1;
-                        const term = (qm ? qm[2] : dishSearch).trim().toLowerCase();
-                        const matches = Object.entries(allDB).filter(([n]) => n.toLowerCase().includes(term)).slice(0, 8);
-                        if (matches.length === 0) return null;
+                      {/* Ingredients list */}
+                      {meal.ingredients.map((ing, iIdx) => {
+                        const info = allDB[ing.name];
                         return (
-                          <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-[#1e293b] border border-white/10 rounded-lg shadow-xl max-h-48 overflow-y-auto">
-                            {matches.map(([n, info]) => (
-                              <button key={n} type="button"
-                                onMouseDown={e => e.preventDefault()}
-                                onClick={() => {
-                                  setDishItems(prev => {
-                                    const existing = prev.find(x => x.name === n);
-                                    if (existing) return prev.map(x => x.name === n ? { ...x, qty: x.qty + qty } : x);
-                                    return [...prev, { name: n, qty }];
-                                  });
-                                  setDishSearch('');
-                                  setShowDishSuggestions(false);
-                                }}
-                                className="w-full text-left px-3 py-2 text-xs hover:bg-white/10 transition-colors flex items-center justify-between gap-2 border-b border-white/5 last:border-0">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <span className="text-white font-semibold truncate">{qty > 1 ? `${qty} × ` : ''}{n}</span>
-                                  <span className="text-[7px] px-1.5 py-0.5 rounded bg-white/5 text-slate-400 shrink-0">{info.category}</span>
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0 text-[8px]">
-                                  <span className="text-white">{Math.round(info.cal * qty)}cal</span>
-                                  <span className="text-gym-accent">{+(info.protein * qty).toFixed(1)}p</span>
-                                  <span className="text-gym-amber">{+(info.carbs * qty).toFixed(1)}c</span>
-                                  <span className="text-gym-rose">{+(info.fats * qty).toFixed(1)}f</span>
-                                </div>
-                              </button>
-                            ))}
+                          <div key={iIdx} className="flex items-center gap-2 px-3 py-1.5 border-b border-white/5 hover:bg-white/[0.02] group">
+                            <span className="text-[10px] text-white font-medium flex-1 truncate">{ing.name}</span>
+                            <div className="flex items-center gap-0.5">
+                              <button onClick={() => setDietMeals(p => p.map((m, mi) => mi === mIdx ? { ...m, ingredients: m.ingredients.map((x, xi) => xi === iIdx ? { ...x, qty: Math.max(0.5, x.qty - 0.5) } : x) } : m))}
+                                className="w-4 h-4 rounded bg-white/5 text-slate-400 hover:text-white flex items-center justify-center text-[9px] font-bold">-</button>
+                              <span className="text-[9px] text-gym-amber font-bold w-6 text-center">{ing.qty}</span>
+                              <button onClick={() => setDietMeals(p => p.map((m, mi) => mi === mIdx ? { ...m, ingredients: m.ingredients.map((x, xi) => xi === iIdx ? { ...x, qty: x.qty + 0.5 } : x) } : m))}
+                                className="w-4 h-4 rounded bg-white/5 text-slate-400 hover:text-white flex items-center justify-center text-[9px] font-bold">+</button>
+                            </div>
+                            {info && <span className="text-[8px] text-slate-500 w-14 text-right">{Math.round(info.cal * ing.qty)} cal</span>}
+                            <button onClick={() => setDietMeals(p => p.map((m, mi) => mi === mIdx ? { ...m, ingredients: m.ingredients.filter((_, xi) => xi !== iIdx) } : m))}
+                              className="text-slate-600 hover:text-gym-rose opacity-0 group-hover:opacity-100"><X size={9} /></button>
                           </div>
                         );
-                      })()}
-                    </div>
-                  </div>
+                      })}
 
-                  {/* Dish Ingredients List */}
-                  {dishItems.length > 0 ? (() => {
-                    let tCal = 0, tProt = 0, tCarb = 0, tFat = 0, tFiber = 0, tSugar = 0, tSodium = 0, tPotassium = 0, tCalcium = 0, tIron = 0;
-                    dishItems.forEach(item => {
-                      const info = allDB[item.name];
-                      if (info) {
-                        tCal += Math.round(info.cal * item.qty); tProt += +(info.protein * item.qty).toFixed(1);
-                        tCarb += +(info.carbs * item.qty).toFixed(1); tFat += +(info.fats * item.qty).toFixed(1);
-                        tFiber += +(info.fiber * item.qty).toFixed(1); tSugar += +(info.sugar * item.qty).toFixed(1);
-                        tSodium += Math.round(info.sodium * item.qty); tPotassium += Math.round(info.potassium * item.qty);
-                        tCalcium += Math.round(info.calcium * item.qty); tIron += +(info.iron * item.qty).toFixed(1);
-                      }
-                    });
-                    return (
-                      <>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{dishItems.length} Ingredient{dishItems.length > 1 ? 's' : ''}</span>
-                          <button onClick={() => setDishItems([])} className="text-[9px] text-slate-500 hover:text-gym-rose transition-colors">Clear all</button>
-                        </div>
-                        <div className="rounded-xl border border-white/5 overflow-hidden mb-4">
-                          {/* Table header */}
-                          <div className="flex items-center gap-1 px-3 py-1.5 bg-white/[0.04] border-b border-white/5 text-[8px] font-bold uppercase tracking-wider text-slate-500">
-                            <span className="flex-1">Ingredient</span>
-                            <span className="w-[80px] text-center">Qty</span>
-                            <span className="w-12 text-center text-white">Cal</span>
-                            <span className="w-10 text-center text-gym-accent">Prot</span>
-                            <span className="w-10 text-center text-gym-amber">Carb</span>
-                            <span className="w-10 text-center text-gym-rose">Fat</span>
-                            <span className="w-5" />
-                          </div>
-                          {dishItems.map((item, idx) => {
-                            const info = allDB[item.name];
+                      {/* Add ingredient to this meal */}
+                      <div className="px-3 py-2 relative">
+                        <div className="relative">
+                          <Search size={10} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500" />
+                          <input type="text" value={ingSearchByMeal[mIdx] || ''}
+                            onChange={e => { setIngSearchByMeal(p => ({ ...p, [mIdx]: e.target.value })); setActiveMealSearch(mIdx); }}
+                            onFocus={() => setActiveMealSearch(mIdx)}
+                            onBlur={() => setTimeout(() => setActiveMealSearch(null), 150)}
+                            placeholder="Add ingredient..."
+                            className="w-full bg-white/5 border border-white/10 rounded-lg pl-7 pr-3 py-1.5 text-[10px] text-white placeholder:text-slate-500 focus:outline-none focus:border-gym-rose/40" />
+                          {activeMealSearch === mIdx && (ingSearchByMeal[mIdx] || '').length >= 1 && (() => {
+                            const suggestions = goalRange ? goalRange.suggestedIngredients : [];
+                            const matches = Object.entries(allDB)
+                              .filter(([n]) => n.toLowerCase().includes((ingSearchByMeal[mIdx] || '').toLowerCase()))
+                              .sort(([a], [b]) => {
+                                const aS = suggestions.includes(a) ? 0 : 1;
+                                const bS = suggestions.includes(b) ? 0 : 1;
+                                return aS - bS;
+                              })
+                              .slice(0, 8);
+                            if (matches.length === 0) return null;
                             return (
-                              <div key={item.name} className={cn("flex items-center gap-1 px-3 py-1.5 group hover:bg-white/5 transition-all",
-                                idx % 2 === 0 ? 'bg-white/[0.02]' : '')}>
-                                <div className="flex-1 min-w-0 flex items-center gap-1.5">
-                                  <span className="text-[10px] font-semibold text-white truncate">{item.name}</span>
-                                  {info && <span className="text-[7px] px-1 py-0.5 rounded bg-white/5 text-slate-500 shrink-0">{info.unit}</span>}
-                                </div>
-                                <div className="w-[80px] flex items-center justify-center gap-0.5">
-                                  <button onClick={() => setDishItems(p => p.map((x, i) => i === idx ? { ...x, qty: Math.max(0.5, x.qty - 0.5) } : x))}
-                                    className="w-4 h-4 rounded bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 flex items-center justify-center text-[10px] font-bold transition-all">-</button>
-                                  <input type="number" value={item.qty} min={0.5} step={0.5}
-                                    onChange={e => { const v = parseFloat(e.target.value) || 0.5; setDishItems(p => p.map((x, i) => i === idx ? { ...x, qty: v } : x)); }}
-                                    className="w-10 text-center bg-white/5 border border-white/10 rounded px-0.5 py-0.5 text-[9px] text-purple-400 font-bold focus:outline-none focus:border-purple-500/50" />
-                                  <button onClick={() => setDishItems(p => p.map((x, i) => i === idx ? { ...x, qty: x.qty + 0.5 } : x))}
-                                    className="w-4 h-4 rounded bg-white/5 text-slate-400 hover:text-white hover:bg-white/10 flex items-center justify-center text-[10px] font-bold transition-all">+</button>
-                                </div>
-                                <span className="w-12 text-center text-[9px] font-bold text-white">{info ? Math.round(info.cal * item.qty) : '—'}</span>
-                                <span className="w-10 text-center text-[9px] font-bold text-gym-accent">{info ? +(info.protein * item.qty).toFixed(1) : '—'}</span>
-                                <span className="w-10 text-center text-[9px] font-bold text-gym-amber">{info ? +(info.carbs * item.qty).toFixed(1) : '—'}</span>
-                                <span className="w-10 text-center text-[9px] font-bold text-gym-rose">{info ? +(info.fats * item.qty).toFixed(1) : '—'}</span>
-                                <button onClick={() => setDishItems(p => p.filter((_, i) => i !== idx))}
-                                  className="w-5 p-0.5 text-slate-600 hover:text-gym-rose opacity-0 group-hover:opacity-100 transition-all">
-                                  <X size={10} />
-                                </button>
+                              <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-[#1e293b] border border-white/10 rounded-lg shadow-xl max-h-40 overflow-y-auto">
+                                {matches.map(([n, info]) => (
+                                  <button key={n} type="button" onMouseDown={e => e.preventDefault()}
+                                    onClick={() => {
+                                      setDietMeals(p => p.map((m, mi) => mi === mIdx ? { ...m, ingredients: [...m.ingredients, { name: n, qty: 1 }] } : m));
+                                      setIngSearchByMeal(p => ({ ...p, [mIdx]: '' }));
+                                      setActiveMealSearch(null);
+                                    }}
+                                    className="w-full text-left px-3 py-1.5 text-[10px] hover:bg-white/10 flex items-center justify-between border-b border-white/5 last:border-0">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-white font-semibold">{n}</span>
+                                      {suggestions.includes(n) && <Star size={8} className="text-gym-amber" />}
+                                    </div>
+                                    <span className="text-[8px] text-slate-500">{info.cal}cal · {info.protein}p · {info.carbs}c · {info.fats}f</span>
+                                  </button>
+                                ))}
                               </div>
                             );
-                          })}
-                          {/* Totals row */}
-                          <div className="flex items-center gap-1 px-3 py-2 bg-white/[0.06] border-t border-white/10">
-                            <span className="flex-1 text-[10px] font-extrabold text-purple-400 uppercase tracking-wider">Total per Dish</span>
-                            <span className="w-[80px] text-center text-[9px] text-slate-400">{dishItems.length} items</span>
-                            <span className="w-12 text-center text-[10px] font-extrabold text-white">{tCal}</span>
-                            <span className="w-10 text-center text-[10px] font-extrabold text-gym-accent">{+tProt.toFixed(1)}</span>
-                            <span className="w-10 text-center text-[10px] font-extrabold text-gym-amber">{+tCarb.toFixed(1)}</span>
-                            <span className="w-10 text-center text-[10px] font-extrabold text-gym-rose">{+tFat.toFixed(1)}</span>
-                            <span className="w-5" />
-                          </div>
+                          })()}
                         </div>
-
-                        {/* Nutrition Summary Cards */}
-                        <div className="mb-4">
-                          <div className="flex items-center gap-1.5 mb-2">
-                            <Flame size={11} className="text-purple-400" />
-                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Dish Nutrition Summary</span>
-                          </div>
-                          <div className="grid grid-cols-5 gap-1.5">
-                            {[
-                              { label: 'Calories', val: tCal, unit: 'kcal', color: 'text-white', bg: 'bg-white/10' },
-                              { label: 'Protein', val: +tProt.toFixed(1), unit: 'g', color: 'text-gym-accent', bg: 'bg-gym-accent/10' },
-                              { label: 'Carbs', val: +tCarb.toFixed(1), unit: 'g', color: 'text-gym-amber', bg: 'bg-gym-amber/10' },
-                              { label: 'Fat', val: +tFat.toFixed(1), unit: 'g', color: 'text-gym-rose', bg: 'bg-gym-rose/10' },
-                              { label: 'Fiber', val: +tFiber.toFixed(1), unit: 'g', color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
-                              { label: 'Sugar', val: +tSugar.toFixed(1), unit: 'g', color: 'text-orange-400', bg: 'bg-orange-400/10' },
-                              { label: 'Sodium', val: tSodium, unit: 'mg', color: 'text-sky-400', bg: 'bg-sky-400/10' },
-                              { label: 'K', val: tPotassium, unit: 'mg', color: 'text-violet-400', bg: 'bg-violet-400/10' },
-                              { label: 'Calcium', val: tCalcium, unit: 'mg', color: 'text-cyan-300', bg: 'bg-cyan-300/10' },
-                              { label: 'Iron', val: +tIron.toFixed(1), unit: 'mg', color: 'text-red-400', bg: 'bg-red-400/10' },
-                            ].filter(n => n.val > 0).map(n => (
-                              <div key={n.label} className={cn("rounded-lg px-2 py-1.5 border border-white/5", n.bg)}>
-                                <div className={cn("text-[7px] font-bold uppercase tracking-wider mb-0.5", n.color)}>{n.label}</div>
-                                <div className={cn("text-sm font-extrabold", n.color)}>{n.val}<span className="text-[7px] font-normal ml-0.5 opacity-60">{n.unit}</span></div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Macro bar */}
-                        {tProt + tCarb + tFat > 0 && (
-                          <div className="mb-4">
-                            <div className="flex items-center gap-1 h-2 rounded-full overflow-hidden bg-white/5">
-                              <div className="h-full bg-gym-accent rounded-full transition-all" style={{ width: `${(tProt / (tProt + tCarb + tFat)) * 100}%` }} />
-                              <div className="h-full bg-gym-amber rounded-full transition-all" style={{ width: `${(tCarb / (tProt + tCarb + tFat)) * 100}%` }} />
-                              <div className="h-full bg-gym-rose rounded-full transition-all" style={{ width: `${(tFat / (tProt + tCarb + tFat)) * 100}%` }} />
-                            </div>
-                            <div className="flex items-center gap-4 mt-1 text-[8px] text-slate-400">
-                              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gym-accent" />Protein {Math.round((tProt / (tProt + tCarb + tFat)) * 100)}%</span>
-                              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gym-amber" />Carbs {Math.round((tCarb / (tProt + tCarb + tFat)) * 100)}%</span>
-                              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gym-rose" />Fat {Math.round((tFat / (tProt + tCarb + tFat)) * 100)}%</span>
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    );
-                  })() : (
-                    <div className="text-center py-8">
-                      <div className="w-14 h-14 rounded-2xl bg-purple-500/10 flex items-center justify-center mx-auto mb-3">
-                        <Sparkles size={24} className="text-purple-400/40" />
                       </div>
-                      <p className="text-slate-400 text-sm font-medium mb-1">No ingredients added yet</p>
-                      <p className="text-slate-600 text-xs">Search and add ingredients above to build your dish recipe</p>
                     </div>
-                  )}
+                  );
+                })}
+              </div>
 
-                  {/* Saved Recipes List */}
-                  {savedDishes.length > 0 && (
-                    <div className="pt-4 border-t border-white/5">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Saved Recipes ({savedDishes.length})</span>
+              {/* Add meal */}
+              <div className="flex items-center gap-2 mb-4">
+                <select value={addingMealTag} onChange={e => setAddingMealTag(e.target.value)}
+                  className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none">
+                  {MEAL_TAGS.map(t => <option key={t} value={t} className="bg-[#1e293b]">{t}</option>)}
+                </select>
+                <button onClick={() => setDietMeals(p => [...p, { tag: addingMealTag, ingredients: [] }])}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-xs text-white hover:bg-white/10 transition-all">
+                  <Plus size={12} /> Add Meal
+                </button>
+              </div>
+
+              <div className="flex gap-2">
+                <button onClick={() => setStep(2)} className="flex-1 py-2 bg-white/5 border border-white/10 text-white rounded-xl text-sm font-bold hover:bg-white/10 transition-all">← Back</button>
+                <button onClick={() => setStep(4)}
+                  className="flex-1 py-2 bg-gym-rose text-white rounded-xl text-sm font-bold hover:bg-gym-rose/80 transition-all">Review & Save →</button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 4: Review & Save */}
+          {step === 4 && selectedClient && goalRange && (
+            <div>
+              {savedMessage && (
+                <div className="mb-4 p-3 rounded-xl bg-gym-accent/10 border border-gym-accent/30 text-gym-accent text-sm font-bold flex items-center gap-2">
+                  <Check size={16} /> {savedMessage}
+                </div>
+              )}
+
+              <div className="flex items-center gap-4 p-3 rounded-xl bg-white/[0.03] border border-white/10 mb-4">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gym-accent to-gym-secondary flex items-center justify-center text-white text-xs font-bold">
+                  {selectedClient.name.split(' ').map(n => n[0]).join('')}
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-white">{selectedClient.name}</p>
+                  <p className="text-[10px] text-slate-400">{selectedClient.goal} · {selectedClient.bodyTarget}</p>
+                </div>
+              </div>
+
+              {/* Totals vs Range */}
+              <div className="grid grid-cols-4 gap-2 mb-4">
+                {[
+                  { label: 'Calories', val: totalNutrition.cal, range: goalRange.calRange, unit: 'kcal', color: 'text-white' },
+                  { label: 'Protein', val: totalNutrition.protein, range: goalRange.proteinRange, unit: 'g', color: 'text-gym-accent' },
+                  { label: 'Carbs', val: totalNutrition.carbs, range: goalRange.carbsRange, unit: 'g', color: 'text-gym-amber' },
+                  { label: 'Fat', val: totalNutrition.fats, range: goalRange.fatsRange, unit: 'g', color: 'text-gym-rose' },
+                ].map(n => (
+                  <div key={n.label} className={cn("rounded-lg px-3 py-2 border",
+                    isInRange(n.val, n.range) ? 'border-gym-accent/30 bg-gym-accent/5' : n.val > n.range[1] ? 'border-gym-rose/30 bg-gym-rose/5' : 'border-gym-amber/30 bg-gym-amber/5')}>
+                    <div className="flex items-center justify-between">
+                      <p className={cn("text-[8px] uppercase font-bold", n.color)}>{n.label}</p>
+                      {isInRange(n.val, n.range) ? <Check size={10} className="text-gym-accent" /> : <AlertTriangle size={10} className={n.val > n.range[1] ? "text-gym-rose" : "text-gym-amber"} />}
+                    </div>
+                    <p className={cn("text-lg font-extrabold", isInRange(n.val, n.range) ? 'text-gym-accent' : n.val > n.range[1] ? 'text-gym-rose' : 'text-gym-amber')}>
+                      {n.val}<span className="text-[8px] font-normal opacity-60 ml-0.5">{n.unit}</span>
+                    </p>
+                    <p className="text-[7px] text-slate-500">Range: {n.range[0]}–{n.range[1]}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Meal breakdown */}
+              <div className="space-y-2 mb-4">
+                {dietMeals.filter(m => m.ingredients.length > 0).map((meal, idx) => {
+                  const mn = mealNutrition(meal);
+                  return (
+                    <div key={idx} className="rounded-lg border border-white/10 bg-white/[0.02] p-3">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-bold text-white">{meal.tag}</span>
+                        <span className="text-[9px] text-slate-400">{mn.cal} cal · {mn.protein}p · {mn.carbs}c · {mn.fats}f</span>
                       </div>
-                      {/* Filter Tabs */}
-                      <div className="flex gap-1 mb-2 flex-wrap">
-                        <button onClick={() => { setDishFilterCat('All'); setDishFilterGoal('All'); }}
-                          className={cn("px-2 py-0.5 rounded text-[8px] font-bold border transition-all", dishFilterCat === 'All' && dishFilterGoal === 'All' ? 'bg-purple-500/10 border-purple-500/30 text-purple-400' : 'bg-white/5 border-white/5 text-slate-500 hover:text-white')}>All</button>
-                        {MEAL_CATEGORIES.map(c => (
-                          <button key={c} onClick={() => { setDishFilterCat(c); setDishFilterGoal('All'); }}
-                            className={cn("px-2 py-0.5 rounded text-[8px] font-bold border transition-all", dishFilterCat === c ? 'bg-purple-500/10 border-purple-500/30 text-purple-400' : 'bg-white/5 border-white/5 text-slate-500 hover:text-white')}>{c}</button>
+                      <div className="flex flex-wrap gap-1">
+                        {meal.ingredients.map((ing, i) => (
+                          <span key={i} className="text-[8px] px-1.5 py-0.5 rounded bg-white/5 border border-white/5 text-slate-300">
+                            {ing.qty > 1 ? `${ing.qty}× ` : ''}{ing.name}
+                          </span>
                         ))}
                       </div>
-                      <div className="flex gap-1 mb-3 flex-wrap">
-                        {GOAL_TYPES.map(g => {
-                          const goalColors: Record<string, string> = { 'Weight Loss': 'text-gym-rose', 'Muscle Gain': 'text-gym-accent', 'Maintenance': 'text-gym-amber' };
-                          return (
-                            <button key={g} onClick={() => { setDishFilterGoal(dishFilterGoal === g ? 'All' : g); }}
-                              className={cn("px-2 py-0.5 rounded text-[8px] font-bold border transition-all", dishFilterGoal === g ? 'bg-white/10 border-white/20 ' + (goalColors[g] || 'text-white') : 'bg-white/5 border-white/5 text-slate-500 hover:text-white')}>{g}</button>
-                          );
-                        })}
-                      </div>
-                      <div className="space-y-1.5 max-h-52 overflow-y-auto">
-                        {savedDishes.filter(d => (dishFilterCat === 'All' || d.category === dishFilterCat) && (dishFilterGoal === 'All' || d.goal === dishFilterGoal)).map((dish, _filteredIdx) => {
-                          const idx = savedDishes.indexOf(dish);
-                          let dCal = 0, dProt = 0, dCarb = 0, dFat = 0;
-                          dish.items.forEach(item => {
-                            const info = allDB[item.name];
-                            if (info) { dCal += Math.round(info.cal * item.qty); dProt += +(info.protein * item.qty).toFixed(1); dCarb += +(info.carbs * item.qty).toFixed(1); dFat += +(info.fats * item.qty).toFixed(1); }
-                          });
-                          const goalColors: Record<string, string> = { 'Weight Loss': 'text-gym-rose bg-gym-rose/10', 'Muscle Gain': 'text-gym-accent bg-gym-accent/10', 'Maintenance': 'text-gym-amber bg-gym-amber/10' };
-                          return (
-                            <div key={idx} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/[0.03] border border-white/5 hover:bg-white/5 transition-all group">
-                              <Sparkles size={12} className="text-purple-400 shrink-0" />
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs font-bold text-white truncate">{dish.name}</span>
-                                  <span className="text-[7px] px-1.5 py-0.5 rounded bg-white/5 text-slate-500 shrink-0">{dish.category}</span>
-                                  <span className={cn("text-[7px] px-1.5 py-0.5 rounded shrink-0 font-bold", goalColors[dish.goal] || 'text-slate-400 bg-white/5')}>{dish.goal}</span>
-                                </div>
-                                <div className="flex items-center gap-2 text-[8px] mt-0.5">
-                                  <span className="text-slate-400">{dish.items.length} ingredients</span>
-                                  <span className="text-white">{dCal}cal</span>
-                                  <span className="text-gym-accent">{+dProt.toFixed(1)}p</span>
-                                  <span className="text-gym-amber">{+dCarb.toFixed(1)}c</span>
-                                  <span className="text-gym-rose">{+dFat.toFixed(1)}f</span>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
-                                <button onClick={() => { setDishName(dish.name); setDishCategory(dish.category); setDishGoal(dish.goal); setDishItems([...dish.items]); setEditingDishIdx(idx); }}
-                                  className="p-1 rounded text-slate-500 hover:text-purple-400 hover:bg-white/10 transition-all" title="Edit">
-                                  <Edit3 size={11} />
-                                </button>
-                                <button onClick={() => { setDishName(dish.name + ' (Copy)'); setDishCategory(dish.category); setDishGoal(dish.goal); setDishItems([...dish.items]); setEditingDishIdx(null); }}
-                                  className="p-1 rounded text-slate-500 hover:text-gym-secondary hover:bg-white/10 transition-all" title="Duplicate">
-                                  <Copy size={11} />
-                                </button>
-                                <button onClick={() => setSavedDishes(p => p.filter((_, i) => i !== idx))}
-                                  className="p-1 rounded text-slate-500 hover:text-gym-rose hover:bg-white/10 transition-all" title="Delete">
-                                  <Trash2 size={11} />
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
                     </div>
-                  )}
-                </div>
+                  );
+                })}
+              </div>
 
-                {/* Popup Footer */}
-                <div className="px-6 py-4 border-t border-white/5 flex gap-3 shrink-0">
-                  <button onClick={() => setShowDishBuilder(false)}
-                    className="flex-1 py-2.5 bg-white/5 border border-white/10 rounded-xl text-xs font-medium text-slate-400 hover:bg-white/10 transition-all">
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (!dishName.trim() || dishItems.length === 0) return;
-                      if (editingDishIdx !== null) {
-                        setSavedDishes(p => p.map((d, i) => i === editingDishIdx ? { name: dishName.trim(), category: dishCategory, goal: dishGoal, items: [...dishItems] } : d));
-                        setEditingDishIdx(null);
-                      } else {
-                        setSavedDishes(p => [...p, { name: dishName.trim(), category: dishCategory, goal: dishGoal, items: [...dishItems] }]);
-                      }
-                      setDishName('');
-                      setDishItems([]);
-                      setDishCategory('Breakfast');
-                      setDishGoal('Maintenance');
-                    }}
-                    disabled={!dishName.trim() || dishItems.length === 0}
-                    className="flex-1 py-2.5 bg-purple-600 text-white rounded-xl text-xs font-bold disabled:opacity-40 hover:bg-purple-600/80 transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-purple-600/20">
-                    <Save size={13} /> {editingDishIdx !== null ? 'Update Recipe' : 'Save Recipe'}
-                  </button>
-                </div>
-              </motion.div>
-            </motion.div>
+              <div className="flex gap-2">
+                <button onClick={() => setStep(3)} className="flex-1 py-2 bg-white/5 border border-white/10 text-white rounded-xl text-sm font-bold hover:bg-white/10 transition-all">← Edit Meals</button>
+                <button onClick={() => { setSavedMessage(`Diet plan saved for ${selectedClient.name}!`); setTimeout(() => onClose(), 2000); }}
+                  className="flex-1 py-2 bg-gym-accent text-white rounded-xl text-sm font-bold hover:bg-gym-accent/80 transition-all shadow-lg shadow-gym-accent/20">
+                  <Save size={14} className="inline mr-1" /> Save & Assign
+                </button>
+              </div>
+            </div>
           )}
-        </AnimatePresence>
-
-        {/* Nutrient Types Popup Modal */}
-        <AnimatePresence>
-          {showNutrientPopup && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[200] flex items-center justify-center">
-              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => { setShowNutrientPopup(false); setEditingNutrient(null); }} />
-              <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
-                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                className="relative z-10 bg-[#0f1729] border border-white/10 rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
-                {/* Popup Header */}
-                <div className="bg-gradient-to-r from-gym-secondary via-indigo-600 to-purple-600 px-6 py-4 flex items-center justify-between">
-                  <div>
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <Zap size={16} className="text-white/80" />
-                      <span className="text-white/80 text-xs font-medium tracking-wide uppercase">Nutrition Manager</span>
-                    </div>
-                    <h3 className="text-lg font-extrabold text-white">{editingNutrient ? 'Edit Nutrient Type' : 'Add New Nutrient Type'}</h3>
-                  </div>
-                  <button onClick={() => { setShowNutrientPopup(false); setEditingNutrient(null); }}
-                    className="text-white/60 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-1.5 transition-all">
-                    <X size={16} />
-                  </button>
-                </div>
-
-                {/* Popup Body */}
-                <div className="px-6 py-5">
-                  <div className="space-y-4">
-                    {/* Nutrient Name */}
-                    <div>
-                      <label className="text-[9px] text-slate-400 uppercase font-bold block mb-1.5">Nutrient Name</label>
-                      <input type="text" value={popupNutrient.name}
-                        onChange={e => setPopupNutrient(p => ({ ...p, name: e.target.value }))}
-                        placeholder="e.g. Vitamin A, Vitamin B12, Magnesium..."
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-gym-secondary/50 transition-all" />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      {/* Unit */}
-                      <div>
-                        <label className="text-[9px] text-slate-400 uppercase font-bold block mb-1.5">Unit</label>
-                        <input type="text" value={popupNutrient.unit}
-                          onChange={e => setPopupNutrient(p => ({ ...p, unit: e.target.value }))}
-                          placeholder="mg, μg, IU"
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-gym-secondary/50 transition-all" />
-                      </div>
-                      {/* Color */}
-                      <div>
-                        <label className="text-[9px] text-slate-400 uppercase font-bold block mb-1.5">Color</label>
-                        <div className="flex flex-wrap gap-1.5">
-                          {NUTRIENT_COLORS.map(c => (
-                            <button key={c} onClick={() => setPopupNutrient(p => ({ ...p, color: c }))}
-                              className={cn("w-6 h-6 rounded-full border-2 transition-all flex items-center justify-center",
-                                popupNutrient.color === c ? 'border-white scale-110' : 'border-transparent hover:border-white/30')}>
-                              <span className={cn("w-4 h-4 rounded-full", c.replace('text-', 'bg-'))} />
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      {/* Max Slider Value */}
-                      <div>
-                        <label className="text-[9px] text-slate-400 uppercase font-bold block mb-1.5">Max Slider Value</label>
-                        <input type="number" value={popupNutrient.maxValue} min={1}
-                          onChange={e => setPopupNutrient(p => ({ ...p, maxValue: parseInt(e.target.value) || 1000 }))}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-gym-secondary/50 transition-all" />
-                      </div>
-                      {/* Step */}
-                      <div>
-                        <label className="text-[9px] text-slate-400 uppercase font-bold block mb-1.5">Slider Step</label>
-                        <input type="number" value={popupNutrient.step} min={0.1} step={0.1}
-                          onChange={e => setPopupNutrient(p => ({ ...p, step: parseFloat(e.target.value) || 1 }))}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-gym-secondary/50 transition-all" />
-                      </div>
-                    </div>
-
-                    {/* Preview */}
-                    {popupNutrient.name.trim() && (
-                      <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5">
-                        <span className="text-[8px] text-slate-500 uppercase font-bold block mb-2">Preview — how it will appear in the ingredient form</span>
-                        <div>
-                          <div className="flex items-center justify-between mb-1">
-                            <label className={cn("text-[8px] uppercase font-bold", popupNutrient.color)}>{popupNutrient.name} ({popupNutrient.unit})</label>
-                            <span className={cn("text-[10px] font-bold", popupNutrient.color)}>{Math.round(popupNutrient.maxValue / 3)}</span>
-                          </div>
-                          <input type="range" min={0} max={popupNutrient.maxValue} step={popupNutrient.step}
-                            value={Math.round(popupNutrient.maxValue / 3)} readOnly
-                            className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-white/10 accent-gym-secondary" />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* All Nutrient Types List */}
-                  <div className="mt-5 pt-4 border-t border-white/5">
-                    <span className="text-[9px] text-slate-400 uppercase font-bold block mb-2">Built-in Nutrients</span>
-                    <div className="flex flex-wrap gap-1.5 mb-4">
-                      {[
-                        { id: 'cal', name: 'Calories', unit: 'kcal', color: 'text-white' },
-                        { id: 'protein', name: 'Protein', unit: 'g', color: 'text-gym-accent' },
-                        { id: 'carbs', name: 'Carbs', unit: 'g', color: 'text-gym-amber' },
-                        { id: 'fats', name: 'Fat', unit: 'g', color: 'text-gym-rose' },
-                        { id: 'fiber', name: 'Fiber', unit: 'g', color: 'text-emerald-400' },
-                        { id: 'sugar', name: 'Sugar', unit: 'g', color: 'text-orange-400' },
-                        { id: 'sodium', name: 'Sodium', unit: 'mg', color: 'text-sky-400' },
-                        { id: 'potassium', name: 'Potassium', unit: 'mg', color: 'text-violet-400' },
-                        { id: 'calcium', name: 'Calcium', unit: 'mg', color: 'text-cyan-300' },
-                        { id: 'iron', name: 'Iron', unit: 'mg', color: 'text-red-400' },
-                      ].map(nt => (
-                        <div key={nt.id} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.03] border border-white/5">
-                          <span className={cn("w-1.5 h-1.5 rounded-full", nt.color.replace('text-', 'bg-'))} />
-                          <span className={cn("text-[10px] font-semibold", nt.color)}>{nt.name}</span>
-                          <span className="text-[7px] text-slate-600">({nt.unit})</span>
-                          <span className="text-[6px] px-1 py-0.5 rounded bg-white/5 text-slate-500 font-bold">CORE</span>
-                        </div>
-                      ))}
-                    </div>
-
-                    <span className="text-[9px] text-slate-400 uppercase font-bold block mb-2">
-                      Custom Nutrients {customNutrientTypes.length > 0 && <span className="text-gym-secondary">({customNutrientTypes.length})</span>}
-                    </span>
-                    {customNutrientTypes.length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {customNutrientTypes.map(nt => (
-                          <div key={nt.id} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/5 group">
-                            <span className={cn("w-2 h-2 rounded-full", nt.color.replace('text-', 'bg-'))} />
-                            <span className="text-xs font-semibold text-white">{nt.name}</span>
-                            <span className="text-[8px] text-slate-500">({nt.unit})</span>
-                            <button onClick={() => { setEditingNutrient(nt.id); setPopupNutrient({ name: nt.name, unit: nt.unit, color: nt.color, maxValue: 1000, step: 5 }); }}
-                              className="ml-1 p-0.5 rounded text-slate-600 hover:text-gym-secondary opacity-0 group-hover:opacity-100 transition-all" title="Edit">
-                              <Pencil size={9} />
-                            </button>
-                            <button onClick={() => onDeleteNutrientType(nt.id)}
-                              className="p-0.5 rounded text-slate-600 hover:text-gym-rose opacity-0 group-hover:opacity-100 transition-all" title="Delete">
-                              <Trash2 size={9} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-[10px] text-slate-600 italic">No custom nutrients yet. Use the form above to add Vitamin A, B12, Magnesium, etc.</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Popup Footer */}
-                <div className="px-6 py-4 border-t border-white/5 flex gap-3">
-                  <button onClick={() => { setShowNutrientPopup(false); setEditingNutrient(null); }}
-                    className="flex-1 py-2.5 bg-white/5 border border-white/10 rounded-xl text-xs font-medium text-slate-400 hover:bg-white/10 transition-all">
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (!popupNutrient.name.trim()) return;
-                      const id = popupNutrient.name.trim().toLowerCase().replace(/\s+/g, '_');
-                      if (editingNutrient) {
-                        onUpdateNutrientType(editingNutrient, { id, name: popupNutrient.name.trim(), unit: popupNutrient.unit, color: popupNutrient.color });
-                        setEditingNutrient(null);
-                      } else {
-                        onAddNutrientType({ id, name: popupNutrient.name.trim(), unit: popupNutrient.unit, color: popupNutrient.color });
-                      }
-                      setPopupNutrient({ name: '', unit: 'mg', color: NUTRIENT_COLORS[(customNutrientTypes.length + 1) % NUTRIENT_COLORS.length], maxValue: 1000, step: 5 });
-                      setShowNutrientPopup(false);
-                    }}
-                    disabled={!popupNutrient.name.trim()}
-                    className="flex-1 py-2.5 bg-gym-secondary text-white rounded-xl text-xs font-bold disabled:opacity-40 hover:bg-gym-secondary/80 transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-gym-secondary/20">
-                    <Save size={13} /> {editingNutrient ? 'Update Nutrient' : 'Add Nutrient'}
-                  </button>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        </div>
       </motion.div>
-    </div>
+    </motion.div>
   );
 };
 
@@ -3307,18 +3010,30 @@ const DietListPanel = ({ onClose, customIngredients, customNutrientTypes }: {
 
   const allDB = { ...NUTRITION_DB, ...customIngredients };
 
-  // Smart parse: "5 eggs" → qty=5, search="eggs"
-  const parseInput = (val: string) => {
-    const m = val.match(/^(\d+\.?\d*)\s+(.+)/);
-    return { qty: m ? parseFloat(m[1]) : 1, term: (m ? m[2] : val).trim().toLowerCase() };
-  };
-
   const addItem = (name: string, qty: number) => {
     setItems(prev => {
       const existing = prev.find(x => x.name === name);
       if (existing) return prev.map(x => x.name === name ? { ...x, qty: x.qty + qty } : x);
       return [...prev, { name, qty }];
     });
+    setSearch('');
+    setShowSuggestions(false);
+  };
+
+  const handleSmartAdd = () => {
+    if (!search.trim()) return;
+    // Support comma-separated: "3 eggs, 1 chicken breast, salads"
+    const parts = search.split(',').map(s => s.trim()).filter(Boolean);
+    for (const part of parts) {
+      const parsed = smartParseIngredient(part, allDB);
+      if (parsed) {
+        setItems(prev => {
+          const existing = prev.find(x => x.name === parsed.name);
+          if (existing) return prev.map(x => x.name === parsed.name ? { ...x, qty: x.qty + parsed.qty } : x);
+          return [...prev, { name: parsed.name, qty: parsed.qty }];
+        });
+      }
+    }
     setSearch('');
     setShowSuggestions(false);
   };
@@ -3360,12 +3075,12 @@ const DietListPanel = ({ onClose, customIngredients, customNutrientTypes }: {
   ];
 
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-end">
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <motion.div
-        initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
+        initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
         transition={{ type: 'spring', damping: 28, stiffness: 240 }}
-        className="relative z-10 bg-[#0f1729] w-full max-w-2xl h-full flex flex-col border-l border-white/10 shadow-2xl"
+        className="relative z-10 bg-[#0f1729] w-full max-w-2xl max-h-[90vh] flex flex-col border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
       >
         {/* Header */}
         <div className="relative bg-gradient-to-r from-gym-amber via-orange-500 to-yellow-500 px-6 pt-5 pb-6 shrink-0">
@@ -3396,22 +3111,35 @@ const DietListPanel = ({ onClose, customIngredients, customNutrientTypes }: {
               onChange={e => { setSearch(e.target.value); setShowSuggestions(true); }}
               onFocus={() => setShowSuggestions(true)}
               onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-              placeholder="Type ingredient (e.g. 3 Eggs, 2 Chicken Breast, Rice...)"
+              onKeyDown={e => { if (e.key === 'Enter') handleSmartAdd(); }}
+              placeholder="Type: 3 eggs, 100g paneer, 1 cup rice (comma-separated)"
               className="w-full bg-white/5 border border-white/10 rounded-xl pl-9 pr-4 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-gym-amber/50" />
             {showSuggestions && search.length >= 1 && (() => {
-              const { qty, term } = parseInput(search);
-              const matches = Object.entries(allDB).filter(([n]) => n.toLowerCase().includes(term)).slice(0, 8);
-              if (matches.length === 0) return null;
+              const parsed = smartParseIngredient(search.split(',').pop()?.trim() || search, allDB);
+              const term = (search.split(',').pop()?.trim() || search).replace(/^[\d.]+\s*(g|gm|gms|kg|ml|cup|cups|tbsp|tsp|glass|bowl|scoop|slice|handful|plate|pc|pcs|piece|pieces)?\s*/i, '').toLowerCase();
+              const matches = Object.entries(allDB).filter(([n]) => n.toLowerCase().includes(term || search.toLowerCase())).slice(0, 8);
+              if (matches.length === 0 && !parsed?.gramsInfo) return null;
               return (
-                <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-[#1e293b] border border-white/10 rounded-lg shadow-xl max-h-48 overflow-y-auto">
-                  {matches.map(([n, info]) => (
+                <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-[#1e293b] border border-white/10 rounded-lg shadow-xl max-h-56 overflow-y-auto">
+                  {parsed?.gramsInfo && (
+                    <div className="px-3 py-2 border-b border-gym-amber/20 bg-gym-amber/5 flex items-center gap-2">
+                      <Zap size={10} className="text-gym-amber shrink-0" />
+                      <span className="text-[9px] text-gym-amber font-bold">Smart Convert:</span>
+                      <span className="text-[9px] text-white/80">{parsed.gramsInfo}</span>
+                    </div>
+                  )}
+                  {matches.map(([n, info]) => {
+                    const sp = smartParseIngredient((search.split(',').pop()?.trim() || search).replace(new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), n), allDB);
+                    const qty = sp ? sp.qty : 1;
+                    return (
                     <button key={n} type="button"
                       onMouseDown={e => e.preventDefault()}
                       onClick={() => addItem(n, qty)}
                       className="w-full text-left px-3 py-2.5 text-xs hover:bg-white/10 transition-colors flex items-center justify-between gap-2 border-b border-white/5 last:border-0">
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-white font-semibold truncate">{qty > 1 ? `${qty} × ` : ''}{n}</span>
-                        <span className="text-[7px] px-1.5 py-0.5 rounded bg-white/5 text-slate-400 shrink-0">{info.category}</span>
+                        <span className="text-white font-semibold truncate">{n}</span>
+                        <span className="text-[7px] px-1.5 py-0.5 rounded bg-white/5 text-slate-400 shrink-0">{info.unit}</span>
+                        {sp?.gramsInfo && <span className="text-[7px] text-gym-amber/60 shrink-0">{sp.gramsInfo}</span>}
                       </div>
                       <div className="flex items-center gap-2 shrink-0 text-[8px]">
                         <span className="text-white font-bold">{Math.round(info.cal * qty)}cal</span>
@@ -3420,7 +3148,13 @@ const DietListPanel = ({ onClose, customIngredients, customNutrientTypes }: {
                         <span className="text-gym-rose">{+(info.fats * qty).toFixed(1)}f</span>
                       </div>
                     </button>
-                  ))}
+                    );
+                  })}
+                  <div className="px-3 py-2 border-t border-white/10 bg-white/[0.02] flex items-center gap-2">
+                    <span className="text-[8px] text-slate-500">Press</span>
+                    <span className="text-[8px] px-1.5 py-0.5 bg-white/10 rounded text-white font-bold">Enter</span>
+                    <span className="text-[8px] text-slate-500">to add all • Separate with commas for multiple</span>
+                  </div>
                 </div>
               );
             })()}
@@ -3538,10 +3272,12 @@ const DietListPanel = ({ onClose, customIngredients, customNutrientTypes }: {
 };
 
 // ─── Main Component ────────────────────────────────────────────────────────
-export default function NutritionPlansManagement() {
+export default function NutritionPlansManagement({ onNavigateToMembers, onNavigateToPrograms }: { onNavigateToMembers?: () => void; onNavigateToPrograms?: () => void } = {}) {
   const [plans, setPlans] = useState<NutritionPlan[]>(INITIAL_PLANS);
   const [searchQuery, setSearchQuery] = useState('');
   const [goalFilter, setGoalFilter] = useState<NutritionGoal | 'All'>('All');
+  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'table'>('grid');
+  const [expandedCardId, setExpandedCardId] = useState<number | null>(null);
   const [toasts, setToasts] = useState<ToastMsg[]>([]);
 
   const [viewPlan, setViewPlan] = useState<NutritionPlan | null>(null);
@@ -3551,6 +3287,7 @@ export default function NutritionPlansManagement() {
   const [showCreate, setShowCreate] = useState(false);
   const [showIngredientMaster, setShowIngredientMaster] = useState(false);
   const [showDietList, setShowDietList] = useState(false);
+  const [showClientDiet, setShowClientDiet] = useState(false);
   const [customIngredients, setCustomIngredients] = useState<Record<string, NutritionInfo>>({});
   const [customNutrientTypes, setCustomNutrientTypes] = useState<NutrientDef[]>([]);
 
@@ -3610,117 +3347,284 @@ export default function NutritionPlansManagement() {
   const totalClients = plans.reduce((s, p) => s + p.assignedClients, 0);
 
   return (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex flex-col gap-6">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex flex-col gap-2">
+      {/* Header — Clean Split Layout */}
+      {/* Header + Action Chips — single row */}
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-gym-accent/10 text-gym-accent"><Apple size={22} /></div>
-          <div>
-            <div className="flex items-center gap-2.5">
-              <h2 className="text-2xl font-bold text-white">Nutrition Plans</h2>
-              <button
-                onClick={() => setShowIngredientMaster(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/10 text-white rounded-lg font-bold text-xs hover:bg-white/10 hover:border-white/20 transition-all"
-              >
-                <Database size={13} className="text-gym-accent" /> Ingredient Master
-              </button>
-              <button
-                onClick={() => setShowDietList(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/10 text-white rounded-lg font-bold text-xs hover:bg-white/10 hover:border-white/20 transition-all"
-              >
-                <Calculator size={13} className="text-gym-amber" /> Diet List
-              </button>
-            </div>
-            <p className="text-sm text-slate-500 mt-0.5">Create & manage diet plans with meals, macros & ingredients</p>
+          <div className="p-1.5 rounded-lg bg-gym-accent/10 text-gym-accent"><Apple size={16} /></div>
+          <h2 className="text-lg font-bold text-white">Nutrition Plans</h2>
+          <div className="flex items-center gap-1.5 ml-2">
+            <button onClick={() => setShowIngredientMaster(true)}
+              className="flex items-center gap-1 px-2.5 py-1 bg-white/[0.04] border border-white/10 rounded-lg text-[10px] font-bold text-white hover:bg-gym-accent/10 hover:border-gym-accent/30 hover:text-gym-accent transition-all">
+              <Database size={10} className="text-gym-accent" /> Ingredient Master
+            </button>
+            <button onClick={() => setShowDietList(true)}
+              className="flex items-center gap-1 px-2.5 py-1 bg-white/[0.04] border border-white/10 rounded-lg text-[10px] font-bold text-white hover:bg-gym-amber/10 hover:border-gym-amber/30 hover:text-gym-amber transition-all">
+              <Calculator size={10} className="text-gym-amber" /> Diet List
+            </button>
+            <button onClick={() => setShowIngredientMaster(true)}
+              className="flex items-center gap-1 px-2.5 py-1 bg-white/[0.04] border border-white/10 rounded-lg text-[10px] font-bold text-white hover:bg-gym-secondary/10 hover:border-gym-secondary/30 hover:text-gym-secondary transition-all">
+              <BarChart3 size={10} className="text-gym-secondary" /> Analytics
+            </button>
+            <button onClick={() => setShowClientDiet(true)}
+              className="flex items-center gap-1 px-2.5 py-1 bg-white/[0.04] border border-white/10 rounded-lg text-[10px] font-bold text-white hover:bg-gym-rose/10 hover:border-gym-rose/30 hover:text-gym-rose transition-all">
+              <UserPlus size={10} className="text-gym-rose" /> Client Diet
+            </button>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowCreate(true)}
-            className="flex items-center gap-2 px-5 py-2.5 bg-gym-accent text-white rounded-xl font-bold text-sm hover:bg-gym-accent/80 transition-all shadow-lg shadow-gym-accent/20"
-          >
-            <Plus size={16} /> New Plan
-          </button>
-        </div>
+        <button onClick={() => setShowCreate(true)}
+          className="flex items-center gap-1.5 px-4 py-1.5 bg-gym-accent text-white rounded-lg font-bold text-xs hover:bg-gym-accent/80 transition-all shadow-lg shadow-gym-accent/20">
+          <Plus size={13} /> New Plan
+        </button>
       </div>
 
-      {/* Stats Strip */}
-      <div className="flex items-center gap-4 p-4 rounded-xl bg-white/5 border border-white/5 flex-wrap">
-        <div className="flex items-center gap-2">
-          <Apple size={14} className="text-gym-accent" />
-          <span className="text-xs text-slate-400">Total Plans</span>
-          <span className="text-sm font-bold text-white">{plans.length}</span>
-        </div>
-        <div className="w-px h-4 bg-white/10" />
-        <div className="flex items-center gap-2">
-          <Users size={14} className="text-gym-amber" />
-          <span className="text-xs text-slate-400">Total Clients</span>
-          <span className="text-sm font-bold text-white">{totalClients}</span>
-        </div>
-        <div className="w-px h-4 bg-white/10" />
-        <button onClick={() => setShowIngredientMaster(true)} className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-          <Database size={14} className="text-cyan-400" />
-          <span className="text-xs text-slate-400">Ingredients</span>
-          <span className="text-sm font-bold text-white">{Object.keys(NUTRITION_DB).length + Object.keys(customIngredients).length}</span>
-        </button>
-        <div className="w-px h-4 bg-white/10" />
-        {(['Weight Loss', 'Muscle Gain', 'Cardio', 'Strength'] as NutritionGoal[]).map(g => (
-          <React.Fragment key={g}>
-            <div className="flex items-center gap-2">
-              <span className={goalColor[g]}>{goalIcon[g]}</span>
-              <span className="text-xs text-slate-400">{g}</span>
-              <span className="text-sm font-bold text-white">{plans.filter(p => p.goal === g).length}</span>
+      {/* Stats Strip — compact single row */}
+      <div className="grid grid-cols-5 gap-2">
+        {[
+          { icon: <Apple size={12} />, label: 'Total Plans', value: plans.length, color: 'text-gym-accent', border: 'border-t-gym-accent' },
+          { icon: <Users size={12} />, label: 'Total Clients', value: totalClients, color: 'text-gym-amber', border: 'border-t-gym-amber' },
+          { icon: <Database size={12} />, label: 'Ingredients', value: Object.keys(NUTRITION_DB).length + Object.keys(customIngredients).length, color: 'text-cyan-400', border: 'border-t-cyan-400', onClick: () => setShowIngredientMaster(true) },
+          { icon: <Flame size={12} />, label: 'Active Plans', value: plans.filter(p => p.status === 'Active').length, color: 'text-gym-rose', border: 'border-t-gym-rose' },
+          { icon: <Award size={12} />, label: 'Goal Types', value: new Set(plans.map(p => p.goal)).size, color: 'text-gym-secondary', border: 'border-t-gym-secondary' },
+        ].map(stat => (
+          <button key={stat.label} onClick={stat.onClick}
+            className={cn("relative rounded-lg bg-white/[0.03] border border-white/5 border-t-2 px-3 py-1.5 text-left transition-all", stat.border, 'hover:bg-white/5')}>
+            <div className="flex items-center gap-1.5">
+              <span className={stat.color}>{stat.icon}</span>
+              <span className="text-lg font-black text-white">{stat.value}</span>
+              <span className="text-[8px] text-white/70 uppercase tracking-wider font-bold">{stat.label}</span>
             </div>
-            <div className="w-px h-4 bg-white/10 last:hidden" />
-          </React.Fragment>
+          </button>
         ))}
       </div>
 
-      {/* Search + Filter Bar */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
+      {/* Search + Goal Filters + View Toggle — single compact row */}
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1 min-w-[150px]">
+          <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+          <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
             placeholder="Search plans..."
-            className="w-full bg-white/5 border border-white/10 rounded-xl pl-9 pr-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-gym-accent/50"
-          />
+            className="w-full bg-white/5 border border-white/10 rounded-lg pl-7 pr-3 py-1.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-gym-accent/50" />
         </div>
-        <div className="flex items-center gap-1.5">
-          <Filter size={13} className="text-slate-500" />
+        <div className="flex items-center gap-1">
+          <Filter size={11} className="text-slate-500" />
           {(['All', 'Weight Loss', 'Muscle Gain', 'Cardio', 'Strength', 'Detox', 'Wellness'] as const).map(g => (
             <button key={g} onClick={() => setGoalFilter(g)}
               className={cn(
-                "px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all",
+                "px-2 py-1 rounded-md text-[10px] font-semibold border transition-all",
                 goalFilter === g
                   ? 'bg-gym-accent/10 border-gym-accent/30 text-gym-accent'
-                  : 'bg-white/5 border-white/5 text-slate-400 hover:text-white hover:bg-white/10'
+                  : 'bg-white/5 border-white/5 text-white hover:bg-white/10'
               )}>
               {g}
             </button>
           ))}
         </div>
+        <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-white/5 border border-white/10">
+          {([
+            { mode: 'grid' as const, icon: <LayoutGrid size={12} />, tip: 'Grid' },
+            { mode: 'list' as const, icon: <List size={12} />, tip: 'List' },
+            { mode: 'table' as const, icon: <Table2 size={12} />, tip: 'Table' },
+          ]).map(v => (
+            <button key={v.mode} onClick={() => setViewMode(v.mode)} title={v.tip}
+              className={cn("p-1 rounded transition-all",
+                viewMode === v.mode ? 'bg-gym-accent/20 text-gym-accent' : 'text-slate-500 hover:text-white hover:bg-white/5')}>
+              {v.icon}
+            </button>
+          ))}
+        </div>
+        {/* Nav buttons */}
+        {onNavigateToMembers && (
+          <button
+            onClick={onNavigateToMembers}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gym-amber/30 bg-gym-amber/10 text-gym-amber hover:bg-gym-amber/20 transition-all whitespace-nowrap shrink-0"
+          >
+            <Users size={13} />
+            Members
+            <ChevronRight size={12} />
+          </button>
+        )}
+        {onNavigateToPrograms && (
+          <button
+            onClick={onNavigateToPrograms}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gym-secondary/30 bg-gym-secondary/10 text-gym-secondary hover:bg-gym-secondary/20 transition-all whitespace-nowrap shrink-0"
+          >
+            <Dumbbell size={13} />
+            Programs
+            <ChevronRight size={12} />
+          </button>
+        )}
       </div>
 
-      {/* Plan Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <AnimatePresence mode="popLayout">
-          {filtered.map(plan => (
-            <React.Fragment key={plan.id}>
-              <NutritionCard
-                plan={plan}
-                onView={() => setViewPlan(plan)}
-                onEdit={() => setEditPlan(plan)}
-                onDelete={() => setDeletePlan(plan)}
-                onDuplicate={() => handleDuplicate(plan)}
-                onAssign={() => setAssignPlan(plan)}
-              />
-            </React.Fragment>
-          ))}
-        </AnimatePresence>
-      </div>
+      {/* Plan Cards — Grid View */}
+      {viewMode === 'grid' && (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+          <AnimatePresence>
+            {filtered.map(plan => (
+              <React.Fragment key={plan.id}>
+                <NutritionCard
+                  plan={plan}
+                  onView={() => setViewPlan(plan)}
+                  onEdit={() => setEditPlan(plan)}
+                  onDelete={() => setDeletePlan(plan)}
+                  onDuplicate={() => handleDuplicate(plan)}
+                  onAssign={() => setAssignPlan(plan)}
+                  expanded={expandedCardId === plan.id}
+                  onToggleExpand={() => setExpandedCardId(prev => prev === plan.id ? null : plan.id)}
+                />
+              </React.Fragment>
+            ))}
+          </AnimatePresence>
+        </div>
+      )}
+
+      {/* Plan Cards — List View */}
+      {viewMode === 'list' && (
+        <div className="flex flex-col gap-3">
+          <AnimatePresence mode="popLayout">
+            {filtered.map(plan => {
+              const totalMeals = plan.meals.morning.length + plan.meals.afternoon.length + plan.meals.evening.length;
+              const allMeals = [...plan.meals.morning, ...plan.meals.afternoon, ...plan.meals.evening];
+              const tp = allMeals.reduce((s, m) => s + m.protein, 0);
+              const tc = allMeals.reduce((s, m) => s + m.carbs, 0);
+              const tf = allMeals.reduce((s, m) => s + m.fats, 0);
+              return (
+                <motion.div key={plan.id} layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                  className="rounded-xl overflow-hidden border border-white/10 hover:border-white/20 bg-[#111827] transition-all group">
+                  <div className="flex items-stretch">
+                    {/* Colored side stripe */}
+                    <div className="w-1.5 shrink-0" style={{ background: goalGradient[plan.goal] }} />
+                    {/* Content */}
+                    <div className="flex-1 flex items-center gap-4 px-5 py-4 min-w-0">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={cn("text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full text-white", levelStripe[plan.level])}>{plan.level}</span>
+                          <h3 className="text-sm font-bold text-white truncate">{plan.name}</h3>
+                          <span className={cn("flex items-center gap-1 text-[8px] font-bold px-1.5 py-0.5 rounded-full",
+                            plan.status === 'Active' ? 'bg-gym-accent/10 text-gym-accent' : 'bg-white/5 text-slate-500')}>
+                            <span className={cn("w-1.5 h-1.5 rounded-full", plan.status === 'Active' ? 'bg-gym-accent' : 'bg-slate-500')} />
+                            {plan.status}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-500 truncate">{plan.description}</p>
+                      </div>
+                      {/* Quick stats */}
+                      <div className="flex items-center gap-4 shrink-0 text-center">
+                        <div>
+                          <div className="text-sm font-black text-white">{plan.totalCal}</div>
+                          <div className="text-[8px] text-slate-500 uppercase">Cal/Day</div>
+                        </div>
+                        <div>
+                          <div className="text-sm font-black text-white">{totalMeals}</div>
+                          <div className="text-[8px] text-slate-500 uppercase">Meals</div>
+                        </div>
+                        <div>
+                          <div className="text-sm font-black text-white">{plan.assignedClients}</div>
+                          <div className="text-[8px] text-slate-500 uppercase">Clients</div>
+                        </div>
+                      </div>
+                      {/* Macro bar */}
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="text-[9px] text-gym-accent font-bold">{tp}g P</span>
+                        <span className="text-[9px] text-gym-amber font-bold">{tc}g C</span>
+                        <span className="text-[9px] text-gym-rose font-bold">{tf}g F</span>
+                      </div>
+                      {/* Actions */}
+                      <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {[
+                          { Icon: Eye, fn: () => setViewPlan(plan), tip: 'View', cls: 'hover:text-white hover:bg-white/10' },
+                          { Icon: Edit3, fn: () => setEditPlan(plan), tip: 'Edit', cls: 'hover:text-gym-accent hover:bg-gym-accent/10' },
+                          { Icon: Copy, fn: () => handleDuplicate(plan), tip: 'Copy', cls: 'hover:text-gym-amber hover:bg-gym-amber/10' },
+                          { Icon: UserPlus, fn: () => setAssignPlan(plan), tip: 'Assign', cls: 'hover:text-gym-secondary hover:bg-gym-secondary/10' },
+                          { Icon: Trash2, fn: () => setDeletePlan(plan), tip: 'Delete', cls: 'hover:text-gym-rose hover:bg-gym-rose/10' },
+                        ].map(({ Icon, fn, tip, cls }) => (
+                          <button key={tip} onClick={fn} title={tip}
+                            className={cn("w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center text-slate-500 transition-all", cls)}>
+                            <Icon size={12} />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+        </div>
+      )}
+
+      {/* Plan Cards — Table View */}
+      {viewMode === 'table' && (
+        <div className="rounded-xl border border-white/10 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-white/[0.04] border-b border-white/10 text-[9px] font-bold uppercase tracking-wider text-slate-500">
+                  <th className="px-4 py-3">Plan Name</th>
+                  <th className="px-3 py-3">Goal</th>
+                  <th className="px-3 py-3">Level</th>
+                  <th className="px-3 py-3 text-center">Cal/Day</th>
+                  <th className="px-3 py-3 text-center">Meals</th>
+                  <th className="px-3 py-3 text-center">Clients</th>
+                  <th className="px-3 py-3">Duration</th>
+                  <th className="px-3 py-3 text-center">Status</th>
+                  <th className="px-3 py-3">Macros</th>
+                  <th className="px-3 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((plan, idx) => {
+                  const totalMeals = plan.meals.morning.length + plan.meals.afternoon.length + plan.meals.evening.length;
+                  const allMeals = [...plan.meals.morning, ...plan.meals.afternoon, ...plan.meals.evening];
+                  const tp = allMeals.reduce((s, m) => s + m.protein, 0);
+                  const tc = allMeals.reduce((s, m) => s + m.carbs, 0);
+                  const tf = allMeals.reduce((s, m) => s + m.fats, 0);
+                  return (
+                    <tr key={plan.id} className={cn("border-b border-white/5 hover:bg-white/[0.03] transition-colors group", idx % 2 === 0 ? 'bg-white/[0.01]' : '')}>
+                      <td className="px-4 py-3">
+                        <button onClick={() => setViewPlan(plan)} className="text-sm font-bold text-white hover:text-gym-accent transition-colors text-left">{plan.name}</button>
+                      </td>
+                      <td className="px-3 py-3">
+                        <span className={cn("flex items-center gap-1 text-[10px] font-bold", goalColor[plan.goal])}>{goalIcon[plan.goal]} {plan.goal}</span>
+                      </td>
+                      <td className="px-3 py-3">
+                        <span className={cn("text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full text-white", levelStripe[plan.level])}>{plan.level}</span>
+                      </td>
+                      <td className="px-3 py-3 text-center text-sm font-bold text-white">{plan.totalCal}</td>
+                      <td className="px-3 py-3 text-center text-sm font-bold text-white">{totalMeals}</td>
+                      <td className="px-3 py-3 text-center text-sm font-bold text-white">{plan.assignedClients}</td>
+                      <td className="px-3 py-3 text-xs text-slate-300">{plan.duration}</td>
+                      <td className="px-3 py-3 text-center">
+                        <span className={cn("text-[8px] font-bold px-2 py-0.5 rounded-full",
+                          plan.status === 'Active' ? 'bg-gym-accent/10 text-gym-accent' : 'bg-white/5 text-slate-500')}>
+                          {plan.status}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[9px] text-gym-accent font-bold">{tp}g P</span>
+                          <span className="text-[9px] text-gym-amber font-bold">{tc}g C</span>
+                          <span className="text-[9px] text-gym-rose font-bold">{tf}g F</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="flex items-center gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => setViewPlan(plan)} title="View" className="w-6 h-6 rounded bg-white/5 flex items-center justify-center text-slate-500 hover:text-white hover:bg-white/10 transition-all"><Eye size={11} /></button>
+                          <button onClick={() => setEditPlan(plan)} title="Edit" className="w-6 h-6 rounded bg-white/5 flex items-center justify-center text-slate-500 hover:text-gym-accent hover:bg-gym-accent/10 transition-all"><Edit3 size={11} /></button>
+                          <button onClick={() => handleDuplicate(plan)} title="Copy" className="w-6 h-6 rounded bg-white/5 flex items-center justify-center text-slate-500 hover:text-gym-amber hover:bg-gym-amber/10 transition-all"><Copy size={11} /></button>
+                          <button onClick={() => setAssignPlan(plan)} title="Assign" className="w-6 h-6 rounded bg-white/5 flex items-center justify-center text-slate-500 hover:text-gym-secondary hover:bg-gym-secondary/10 transition-all"><UserPlus size={11} /></button>
+                          <button onClick={() => setDeletePlan(plan)} title="Delete" className="w-6 h-6 rounded bg-white/5 flex items-center justify-center text-slate-500 hover:text-gym-rose hover:bg-gym-rose/10 transition-all"><Trash2 size={11} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {filtered.length === 0 && (
         <div className="text-center py-16">
@@ -3774,6 +3678,12 @@ export default function NutritionPlansManagement() {
             onClose={() => setShowDietList(false)}
             customIngredients={customIngredients}
             customNutrientTypes={customNutrientTypes}
+          />
+        )}
+        {showClientDiet && (
+          <ClientDietBuilder
+            onClose={() => setShowClientDiet(false)}
+            customIngredients={customIngredients}
           />
         )}
       </AnimatePresence>
